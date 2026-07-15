@@ -54,6 +54,19 @@ is the git tree hash of `src/RealmChat`, so clients self-update exactly when
 the source changed. Downloads are verified against `SHA256SUMS` before the
 running exe is swapped (rename-aside + relaunch, with rollback).
 
+## Options
+
+Everything the retired setup script exposed as editable constants, and where
+it lives now:
+
+| knob | where |
+|---|---|
+| allowed firewall subnets | Settings (server subnet field; the PC's own LAN subnet is auto-derived) |
+| expected address check | Settings ("DNS name" — validated by lookup, no hardcoded IP) |
+| model storage folder | Settings (Browse; defaults to `C:\ProgramData\Ollama\models`) |
+| pinned Ollama version / model / keep-alive | `src/RealmChat/Constants.cs` — deliberately maintainer-only: a merge rolls the change to the host PC via self-update |
+| port | `config.json` `port` override only — deliberately hidden: the game server expects the default, changing it unilaterally silences the bots |
+
 ## Development
 
 - Build: `dotnet build src/RealmChat -c Release` (any .NET 8+ SDK; the net48

@@ -14,6 +14,7 @@ namespace RealmChat
 
         private readonly TextBox subnetBox = new TextBox();
         private readonly TextBox dnsBox = new TextBox();
+        private readonly TextBox modelsBox = new TextBox();
 
         public SetupForm(AppConfig existing)
         {
@@ -24,7 +25,7 @@ namespace RealmChat
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(560, 302);
+            ClientSize = new Size(560, 372);
 
             var title = new Label { AutoSize = true, Location = new Point(16, 14), Text = "Realm Chat setup" };
             title.Font = new Font(Font.FontFamily, Font.Size * 1.35f, FontStyle.Bold);
@@ -58,18 +59,37 @@ namespace RealmChat
             dnsBox.Size = new Size(528, 24);
             dnsBox.Text = Result.dns_name ?? "";
 
-            var ok = new ThemedButton { Text = "Save", Primary = true, Location = new Point(348, 252), Size = new Size(96, 30) };
+            var capModels = new MutedLabel
+            {
+                Location = new Point(16, 242),
+                Text = "Model storage folder (about 5 GB; move it if another drive has more room)",
+            };
+            modelsBox.Location = new Point(16, 260);
+            modelsBox.Size = new Size(432, 24);
+            modelsBox.Text = Result.GetModelsDir();
+            var browseModels = new ThemedButton { Text = "Browse…", Location = new Point(456, 258), Size = new Size(88, 27) };
+            browseModels.Click += delegate
+            {
+                using (var dlg = new FolderBrowserDialog())
+                {
+                    dlg.Description = "Pick the folder Ollama stores its models in";
+                    if (dlg.ShowDialog(this) == DialogResult.OK) modelsBox.Text = dlg.SelectedPath;
+                }
+            };
+
+            var ok = new ThemedButton { Text = "Save", Primary = true, Location = new Point(348, 322), Size = new Size(96, 30) };
             ok.Click += OnOk;
             var cancel = new ThemedButton
             {
                 Text = "Cancel",
-                Location = new Point(452, 252),
+                Location = new Point(452, 322),
                 Size = new Size(92, 30),
                 DialogResult = DialogResult.Cancel,
             };
 
             Controls.AddRange(new Control[] { title, intro, capLocal, valLocal,
-                capSubnet, subnetBox, capDns, dnsBox, ok, cancel });
+                capSubnet, subnetBox, capDns, dnsBox,
+                capModels, modelsBox, browseModels, ok, cancel });
             AcceptButton = ok;
             CancelButton = cancel;
         }
@@ -86,6 +106,26 @@ namespace RealmChat
                     "Check the value the admin gave you (leave it empty to set later).",
                     "Realm Chat", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
+            }
+            string models = (modelsBox.Text ?? "").Trim();
+            if (models.Length > 0 && models.IndexOfAny(System.IO.Path.GetInvalidPathChars()) >= 0)
+            {
+                MessageBox.Show(this, "That model folder path contains invalid characters.",
+                    "Realm Chat", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            string oldModels = Result.GetModelsDir();
+            // Store the override only when it differs from the default.
+            Result.models_dir = (models.Length == 0 ||
+                string.Equals(models, Constants.ModelsDir, StringComparison.OrdinalIgnoreCase))
+                ? null : models;
+            if (!string.Equals(oldModels, Result.GetModelsDir(), StringComparison.OrdinalIgnoreCase))
+            {
+                MessageBox.Show(this,
+                    "Model folder changed. Click 'Fix problems' afterwards so the system\r\n" +
+                    "setting follows, and note the model re-downloads into the new folder\r\n" +
+                    "on the next start (the old folder can then be deleted).",
+                    "Realm Chat", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             Result.server_subnets = string.Join(",", subnets.ToArray());
             Result.dns_name = (dnsBox.Text ?? "").Trim();
