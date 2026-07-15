@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Web.Script.Serialization;
 
 namespace RealmChat
@@ -35,6 +36,37 @@ namespace RealmChat
         public string last_failure_toast_utc { get; set; }
         public string last_check_utc { get; set; }
         public string last_result { get; set; }
+
+        // Previous model-store locations, recorded when the folder is changed
+        // in Settings so Cleanup can offer to reclaim them later.
+        public string old_models_dirs { get; set; }
+
+        public List<string> GetOldModelsDirs()
+        {
+            var list = new List<string>();
+            if (string.IsNullOrEmpty(old_models_dirs)) return list;
+            foreach (var raw in old_models_dirs.Split('|'))
+            {
+                var s = raw.Trim();
+                if (s.Length > 0) list.Add(s);
+            }
+            return list;
+        }
+
+        public void AddOldModelsDir(string dir)
+        {
+            var list = GetOldModelsDirs();
+            if (list.Contains(dir, StringComparer.OrdinalIgnoreCase)) return;
+            list.Add(dir);
+            old_models_dirs = string.Join("|", list.ToArray());
+        }
+
+        public void RemoveOldModelsDir(string dir)
+        {
+            var list = GetOldModelsDirs()
+                .Where(s => !string.Equals(s, dir, StringComparison.OrdinalIgnoreCase)).ToList();
+            old_models_dirs = list.Count == 0 ? null : string.Join("|", list.ToArray());
+        }
 
         public int GetPort()
         {

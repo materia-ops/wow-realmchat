@@ -25,6 +25,12 @@ everything on the machine healthy and up to date by itself.
   firewall every minute (toggleable), warns with a toast the moment access
   breaks, and **Fix problems** deletes every foreign Ollama rule and keeps
   exactly the one scoped rule.
+- **Disk cleanup**: when leftovers exist — the old per-user model store, a
+  previous model folder after moving it in Settings, or models the realm
+  doesn't use — a **Clean up** button appears showing exactly what will be
+  deleted and how much space returns. It always asks first, never runs
+  automatically, and unused models are removed via `ollama rm` (never raw
+  file deletion — blobs are shared and refcounted).
 - **Self-updating**: a Scheduled Task checks daily and swaps in new versions
   silently (the update task never starts the chat — that stays a human
   decision). Pinned model/version changes ship as app updates, so the host PC

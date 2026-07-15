@@ -27,6 +27,25 @@ internal static class OllamaStub
             return 0;
         }
 
+        if (args.Length > 1 && args[0] == "rm")
+        {
+            string extra = Path.Combine(stateDir, "extra.present");
+            if (File.Exists(extra) && File.ReadAllText(extra).Trim() == args[1])
+            {
+                File.Delete(extra);
+                Console.WriteLine("deleted '" + args[1] + "'");
+                return 0;
+            }
+            if (File.Exists(marker) && File.ReadAllText(marker).Trim() == args[1])
+            {
+                File.Delete(marker);
+                Console.WriteLine("deleted '" + args[1] + "'");
+                return 0;
+            }
+            Console.Error.WriteLine("model '" + args[1] + "' not found");
+            return 1;
+        }
+
         if (args.Length > 1 && args[0] == "pull")
         {
             Console.WriteLine("pulling manifest");
@@ -59,9 +78,13 @@ internal static class OllamaStub
                 }
                 else if (path == "/api/tags")
                 {
-                    body = File.Exists(marker)
-                        ? "{\"models\":[{\"name\":\"" + File.ReadAllText(marker) + "\"}]}"
-                        : "{\"models\":[]}";
+                    var entries = new System.Collections.Generic.List<string>();
+                    if (File.Exists(marker))
+                        entries.Add("{\"name\":\"" + File.ReadAllText(marker).Trim() + "\",\"size\":5368709120}");
+                    string extra = Path.Combine(stateDir, "extra.present");
+                    if (File.Exists(extra))
+                        entries.Add("{\"name\":\"" + File.ReadAllText(extra).Trim() + "\",\"size\":2147483648}");
+                    body = "{\"models\":[" + string.Join(",", entries.ToArray()) + "]}";
                 }
                 else if (path == "/api/ps")
                 {

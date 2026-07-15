@@ -121,6 +121,8 @@ namespace RealmChat
                 ? null : models;
             if (!string.Equals(oldModels, Result.GetModelsDir(), StringComparison.OrdinalIgnoreCase))
             {
+                // Remember the old location so Clean up can reclaim it later.
+                if (System.IO.Directory.Exists(oldModels)) Result.AddOldModelsDir(oldModels);
                 MessageBox.Show(this,
                     "Model folder changed. Click 'Fix problems' afterwards so the system\r\n" +
                     "setting follows, and note the model re-downloads into the new folder\r\n" +

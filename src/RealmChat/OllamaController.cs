@@ -235,6 +235,59 @@ namespace RealmChat
             using (var p = Process.Start(psi)) p.WaitForExit(15000);
         }
 
+        // All models the server knows, with sizes (server must be up).
+        public List<KeyValuePair<string, long>> ListModels()
+        {
+            var result = new List<KeyValuePair<string, long>>();
+            var json = TryGet("/api/tags", 10);
+            if (json == null) return result;
+            try
+            {
+                var root = new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(json);
+                object modelsObj;
+                if (root == null || !root.TryGetValue("models", out modelsObj)) return result;
+                var arr = modelsObj as System.Collections.ArrayList;
+                if (arr == null) return result;
+                foreach (var item in arr)
+                {
+                    var d = item as Dictionary<string, object>;
+                    if (d == null) continue;
+                    object name, size;
+                    d.TryGetValue("name", out name);
+                    d.TryGetValue("size", out size);
+                    if (name is string)
+                        result.Add(new KeyValuePair<string, long>((string)name,
+                            size == null ? 0 : Convert.ToInt64(size)));
+                }
+            }
+            catch { }
+            return result;
+        }
+
+        // `ollama rm` handles shared-blob refcounting - never delete model
+        // files by hand. Server must be up; no admin needed.
+        public bool RemoveModel(string name)
+        {
+            var exe = ResolveExe();
+            if (exe == null) return false;
+            var psi = new ProcessStartInfo(exe, "rm " + name)
+            {
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            psi.EnvironmentVariables["OLLAMA_HOST"] = "127.0.0.1:" + Port;
+            psi.EnvironmentVariables["OLLAMA_MODELS"] = cfg.GetModelsDir();
+            using (var p = Process.Start(psi))
+            {
+                p.StandardOutput.ReadToEnd();
+                p.StandardError.ReadToEnd();
+                p.WaitForExit(60000);
+                return p.HasExited && p.ExitCode == 0;
+            }
+        }
+
         // Downloads the pinned model via the CLI (server must be up; no admin).
         public bool Pull(Action<string> progressLine)
         {

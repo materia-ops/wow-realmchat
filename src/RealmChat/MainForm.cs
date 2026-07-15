@@ -28,6 +28,7 @@ namespace RealmChat
         private readonly Label[] healthRows;
         private readonly ThemedButton btnFix = new ThemedButton();
         private readonly ThemedButton btnSettings = new ThemedButton();
+        private readonly ThemedButton btnCleanup = new ThemedButton();
         private readonly CheckBox chkFwWatch = new CheckBox { AutoSize = true };
         private readonly MutedLabel capActivity = new MutedLabel { Text = "Activity" };
         private readonly LogBox log = new LogBox();
@@ -40,6 +41,7 @@ namespace RealmChat
         private List<HealthItem> health = new List<HealthItem>();
         private bool busy;
         private bool exiting;
+        private List<CleanupItem> cleanupItems = new List<CleanupItem>();
         private int pollTicks;
         private bool fwAlerted;        // one toast per firewall incident
         private bool fwCheckRunning;
@@ -112,6 +114,16 @@ namespace RealmChat
             btnSettings.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnSettings.Click += OnSettingsClick;
 
+            btnCleanup.Text = "Clean up…";
+            btnCleanup.Size = new Size(118, 28);
+            btnCleanup.Location = new Point(ClientSize.Width - 16 - btnCleanup.Width, 240);
+            btnCleanup.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            btnCleanup.Visible = false;
+            btnCleanup.Click += OnCleanupClick;
+            tips.SetToolTip(btnCleanup,
+                "Frees disk space: old model folders and models the realm doesn't use.\n" +
+                "Shows exactly what will be deleted and asks first.");
+
             // The Ollama app likes to (re)write firewall rules behind our back,
             // which silently cuts the game server off - so watch while running.
             chkFwWatch.Text = "Watch the firewall while the chat runs";
@@ -141,7 +153,7 @@ namespace RealmChat
             Controls.AddRange(new Control[] { lblTitle, btnTheme, lblSubtitle, pill,
                 btnToggle, bar, capHealth });
             Controls.AddRange(healthRows);
-            Controls.AddRange(new Control[] { btnFix, btnSettings, chkFwWatch, capActivity, log, lblFooter });
+            Controls.AddRange(new Control[] { btnFix, btnSettings, btnCleanup, chkFwWatch, capActivity, log, lblFooter });
 
             // Tray: state at a glance, restore on double-click, control menu.
             tray.Icon = AppIcons.Neutral;
@@ -263,8 +275,9 @@ namespace RealmChat
                 try { relaunch = new SelfUpdater(cfg, Say).Run(); }
                 catch (Exception ex) { Say("Update check failed: " + ex.Message); }
 
-                // 2. Health + current server state.
+                // 2. Health + current server state + reclaimable leftovers.
                 var h = HealthCheck.RunAll(cfg, ollama);
+                var c = Cleanup.Scan(cfg, ollama);
                 bool up = ollama.IsUp();
                 bool loaded = up && ollama.ModelLoaded();
 
@@ -279,7 +292,9 @@ namespace RealmChat
                         return;
                     }
                     health = h;
+                    cleanupItems = c;
                     PaintHealth();
+                    RefreshCleanupButton();
                     if (up)
                     {
                         Say("An Ollama server is already running — taking it over.");
@@ -385,11 +400,48 @@ namespace RealmChat
             Task.Run(delegate
             {
                 var h = HealthCheck.RunAll(cfg, ollama);
+                var c = Cleanup.Scan(cfg, ollama);
                 BeginInvoke((Action)(delegate
                 {
                     health = h;
+                    cleanupItems = c;
                     PaintHealth();
+                    RefreshCleanupButton();
                     if (then != null) then();
+                }));
+            });
+        }
+
+        private void RefreshCleanupButton()
+        {
+            long total = cleanupItems.Sum(i => i.Bytes);
+            btnCleanup.Visible = cleanupItems.Count > 0;
+            btnCleanup.Text = cleanupItems.Count > 0 ? "Clean up " + Cleanup.Gb(total) : "Clean up…";
+        }
+
+        private void OnCleanupClick(object sender, EventArgs e)
+        {
+            if (busy || cleanupItems.Count == 0) return;
+            var lines = cleanupItems.Select(i => "  •  " + i.Describe()).ToArray();
+            var answer = MessageBox.Show(this,
+                "This permanently deletes:\r\n\r\n" + string.Join("\r\n", lines) +
+                "\r\n\r\nThe realm's own model and settings are not touched. Continue?",
+                "Realm Chat — clean up disk space",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes) return;
+
+            busy = true;
+            bar.Active = true;
+            var doomed = cleanupItems;
+            Task.Run(delegate
+            {
+                var left = Cleanup.Delete(cfg, ollama, doomed, Say);
+                BeginInvoke((Action)(delegate
+                {
+                    cleanupItems = left;
+                    RefreshCleanupButton();
+                    busy = false;
+                    bar.Active = false;
                 }));
             });
         }
