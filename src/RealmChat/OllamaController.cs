@@ -38,7 +38,14 @@ namespace RealmChat
 
         public string ResolveExe()
         {
-            if (!string.IsNullOrEmpty(cfg.ollama_exe) && File.Exists(cfg.ollama_exe))
+            return FindExe(cfg);
+        }
+
+        // Static so the firewall code (health check + elevated fix) can bind
+        // rules to the exact exe path without owning a controller.
+        public static string FindExe(AppConfig cfg)
+        {
+            if (cfg != null && !string.IsNullOrEmpty(cfg.ollama_exe) && File.Exists(cfg.ollama_exe))
                 return cfg.ollama_exe;
             var candidates = new[]
             {
@@ -66,7 +73,10 @@ namespace RealmChat
                 };
                 using (var p = Process.Start(psi))
                 {
-                    string outp = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+                    // Read stderr concurrently: reading the pipes one after the
+                    // other deadlocks if the child fills the second pipe's buffer.
+                    var errTask = p.StandardError.ReadToEndAsync();
+                    string outp = p.StandardOutput.ReadToEnd() + errTask.GetAwaiter().GetResult();
                     p.WaitForExit(15000);
                     var m = System.Text.RegularExpressions.Regex.Match(outp, @"(\d+\.\d+\.\d+)");
                     return m.Success ? m.Groups[1].Value : null;
@@ -206,10 +216,12 @@ namespace RealmChat
             if (proc != null && !proc.HasExited)
             {
                 KillTree(proc.Id);
+                proc.Dispose();
                 proc = null;
                 log("Chat stopped.");
                 return;
             }
+            if (proc != null) proc.Dispose();
             proc = null;
             bool any = false;
             foreach (var name in new[] { "ollama", "ollama app" })
@@ -281,8 +293,9 @@ namespace RealmChat
             psi.EnvironmentVariables["OLLAMA_MODELS"] = cfg.GetModelsDir();
             using (var p = Process.Start(psi))
             {
+                var errTask = p.StandardError.ReadToEndAsync();
                 p.StandardOutput.ReadToEnd();
-                p.StandardError.ReadToEnd();
+                errTask.GetAwaiter().GetResult();
                 p.WaitForExit(60000);
                 return p.HasExited && p.ExitCode == 0;
             }
@@ -304,6 +317,7 @@ namespace RealmChat
             psi.EnvironmentVariables["OLLAMA_MODELS"] = cfg.GetModelsDir();
             using (var p = Process.Start(psi))
             {
+                var errTask = p.StandardError.ReadToEndAsync();
                 string line;
                 var seen = new HashSet<string>();
                 while ((line = p.StandardOutput.ReadLine()) != null)
@@ -312,7 +326,7 @@ namespace RealmChat
                     // pull rewrites its progress line constantly; only surface changes
                     if (line.Length > 0 && seen.Add(line) && progressLine != null) progressLine(line);
                 }
-                p.StandardError.ReadToEnd();
+                errTask.GetAwaiter().GetResult();
                 p.WaitForExit();
                 return p.ExitCode == 0;
             }

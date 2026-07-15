@@ -24,7 +24,11 @@ everything on the machine healthy and up to date by itself.
   a perfectly healthy local model. While the chat runs, the app re-checks the
   firewall every minute (toggleable), warns with a toast the moment access
   breaks, and **Fix problems** deletes every foreign Ollama rule and keeps
-  exactly the one scoped rule.
+  exactly the one scoped rule. That rule is bound to `ollama.exe` itself,
+  which is what stops Windows' "allow access" popup from appearing on every
+  chat start — the popup fires for any program that listens with no firewall
+  rule naming its exe, and both popup buttons create exactly the foreign
+  rules the watch then has to clean up.
 - **Disk cleanup**: when leftovers exist — the old per-user model store, a
   previous model folder after moving it in Settings, or models the realm
   doesn't use — a **Clean up** button appears showing exactly what will be

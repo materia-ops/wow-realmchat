@@ -89,40 +89,54 @@ namespace RealmChat
             catch { return null; }
         }
 
-        // Query via PowerShell (readable unprivileged). Verifies OUR rule
-        // (present, enabled, expected subnets) AND hunts for foreign Ollama
-        // rules: anything named *ollama* or program-bound to ollama.exe that
-        // isn't ours. The Ollama app / Windows' first-listen prompt creates
-        // those, and a Block rule among them cuts the game server off while
-        // everything still works locally. Public because the GUI's firewall
-        // watcher re-runs it while the chat is running.
+        // Verifies OUR rule (present, enabled, bound to ollama.exe, expected
+        // subnets) AND hunts for foreign Ollama rules: anything named *ollama*
+        // or program-bound to ollama.exe that isn't ours. The Ollama app /
+        // Windows' first-listen prompt creates those, and a Block rule among
+        // them cuts the game server off while everything still works locally.
+        //
+        // Reads the firewall through the COM policy API (HNetCfg.FwPolicy2)
+        // in-process: the old PowerShell + Get-NetFirewallRule pipeline took
+        // seconds and ~50 MB per run, and this re-runs every minute while the
+        // chat is up. COM identifies rules by display name (the PS `Name` id
+        // isn't exposed there), which is why ours is matched on FwDisplay.
+        // Public because the GUI's firewall watcher re-runs it while running.
         public static bool FirewallStatus(AppConfig cfg, out string detail)
         {
             var expectSubnets = SubnetHelper.AllowedSubnets(cfg);
+            string exe = OllamaController.FindExe(cfg);
             try
             {
-                string script =
-                    "$ours = '" + Constants.FwRuleName + "'; " +
-                    "$r = Get-NetFirewallRule -Name $ours -ErrorAction SilentlyContinue; " +
-                    "$addr = ''; " +
-                    "if ($r) { $addr = (($r | Get-NetFirewallAddressFilter).RemoteAddress -join ',') } " +
-                    "$named = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | " +
-                    "  Where-Object { $_.DisplayName -like '*ollama*' -and $_.Name -ne $ours }); " +
-                    "$prog = @(); " +
-                    "try { $prog = @(Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | " +
-                    "  Where-Object { $_.Program -like '*ollama*' } | Get-NetFirewallRule -ErrorAction SilentlyContinue | " +
-                    "  Where-Object { $_.Name -ne $ours }) } catch {} " +
-                    "$foreign = @($named + $prog) | Sort-Object Name -Unique; " +
-                    "$blocks = @($foreign | Where-Object { \"$($_.Action)\" -eq 'Block' -and (\"$($_.Enabled)\" -eq 'True') }); " +
-                    "$state = if (-not $r) { 'MISSING' } elseif (\"$($r.Enabled)\" -ne 'True') { 'DISABLED' } else { 'OK' }; " +
-                    "$state + '|' + $addr + '|' + (@($blocks).Count) + '|' + (@($foreign).Count)";
-                string outp = RunPs(script);
-                var parts = outp.Split('|');
-                if (parts.Length < 4) { detail = "couldn't read firewall state"; return false; }
+                dynamic policy = Activator.CreateInstance(Type.GetTypeFromProgID("HNetCfg.FwPolicy2"));
+                bool oursFound = false, oursEnabled = false;
+                string oursRemote = "", oursApp = null;
+                int foreign = 0, blocks = 0;
 
-                int blocks, foreign;
-                int.TryParse(parts[2], out blocks);
-                int.TryParse(parts[3], out foreign);
+                foreach (dynamic r in policy.Rules)
+                {
+                    string display = "", app = "";
+                    try { display = (string)r.Name ?? ""; } catch { }
+                    try { app = (string)r.ApplicationName ?? ""; } catch { }
+
+                    if (!oursFound &&
+                        string.Equals(display, Constants.FwDisplay, StringComparison.OrdinalIgnoreCase))
+                    {
+                        oursFound = true;
+                        try { oursEnabled = (bool)r.Enabled; } catch { }
+                        try { oursRemote = (string)r.RemoteAddresses ?? ""; } catch { }
+                        oursApp = app;
+                        continue;
+                    }
+                    if (display.IndexOf("ollama", StringComparison.OrdinalIgnoreCase) < 0 &&
+                        app.IndexOf("ollama", StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+
+                    foreign++;
+                    bool enabled = false; int action = 1;
+                    try { enabled = (bool)r.Enabled; } catch { }
+                    try { action = (int)r.Action; } catch { }
+                    if (enabled && action == 0) blocks++;   // NET_FW_ACTION_BLOCK
+                }
 
                 // Block rules win over allows in Windows Firewall: critical.
                 if (blocks > 0)
@@ -130,15 +144,26 @@ namespace RealmChat
                     detail = blocks + " BLOCKING Ollama rule(s) found (the Ollama app adds these) - Fix removes them";
                     return false;
                 }
-                if (parts[0] == "MISSING") { detail = "rule missing"; return false; }
-                if (parts[0] == "DISABLED") { detail = "rule disabled"; return false; }
+                if (!oursFound) { detail = "rule missing"; return false; }
+                if (!oursEnabled) { detail = "rule disabled"; return false; }
+
+                // Program binding is what suppresses the Windows "allow access"
+                // popup when ollama starts listening - the prompt fires for any
+                // exe that listens with no rule naming that exe.
+                if (exe != null &&
+                    !string.Equals(oursApp ?? "", exe, StringComparison.OrdinalIgnoreCase))
+                {
+                    detail = "rule isn't bound to ollama.exe - Fix rebinds it (stops the Windows firewall popup)";
+                    return false;
+                }
 
                 // Windows often reports subnet entries in dotted-mask form
                 // (192.168.1.0/255.255.255.0) even when set as /24 - normalize
                 // both sides or the check can never match what it just set.
-                var have = parts[1].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                var have = oursRemote.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
                     .Select(s => NormalizeCidr(s)).ToList();
-                var missing = expectSubnets.Select(NormalizeCidr)
+                bool any = have.Any(s => s == "*");
+                var missing = any ? new List<string>() : expectSubnets.Select(NormalizeCidr)
                     .Where(s => !have.Contains(s, StringComparer.OrdinalIgnoreCase)).ToList();
                 if (missing.Count > 0)
                 {
@@ -214,8 +239,11 @@ namespace RealmChat
             };
             using (var p = Process.Start(psi))
             {
+                // Read both pipes concurrently: sequential ReadToEnd deadlocks
+                // if the child fills the not-yet-read pipe's buffer.
+                var errTask = p.StandardError.ReadToEndAsync();
                 string outp = p.StandardOutput.ReadToEnd().Trim();
-                p.StandardError.ReadToEnd();
+                errTask.GetAwaiter().GetResult();
                 p.WaitForExit(60000);
                 return outp;
             }
@@ -298,30 +326,37 @@ namespace RealmChat
                     {
                         var subnets = string.Join(",",
                             SubnetHelper.AllowedSubnets(cfg).Select(s => "'" + s + "'").ToArray());
+                        // Bind the rule to the exe: Windows' "allow access"
+                        // popup fires whenever a program starts listening and
+                        // NO rule names that program - a port-only rule never
+                        // suppresses it. (When install runs in the same fix
+                        // pass it is ordered before this, so the exe exists.)
+                        string exePath = OllamaController.FindExe(cfg);
+                        string progArg = exePath == null ? "" :
+                            "-Program '" + exePath.Replace("'", "''") + "' ";
                         // Keep exactly ONE Ollama rule: delete every foreign one
                         // (named *ollama* or program-bound to ollama.exe - the
                         // Ollama app and Windows' first-listen prompt create
                         // those, including Block rules that cut the server off),
-                        // then (re-)assert ours.
+                        // then recreate ours from the full spec so stale fields
+                        // (missing program binding, old port) can't survive.
                         string script =
                             "$ErrorActionPreference = 'Stop'; " +
                             "try { " +
                             "$ours = '" + Constants.FwRuleName + "'; " +
                             "$subs = @(" + subnets + "); " +
-                            "$named = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | " +
-                            "  Where-Object { $_.DisplayName -like '*ollama*' -and $_.Name -ne $ours }); " +
+                            "$named = @(Get-NetFirewallRule -DisplayName '*ollama*' -ErrorAction SilentlyContinue | " +
+                            "  Where-Object { $_.Name -ne $ours }); " +
                             "$prog = @(); " +
                             "try { $prog = @(Get-NetFirewallApplicationFilter -ErrorAction SilentlyContinue | " +
                             "  Where-Object { $_.Program -like '*ollama*' } | Get-NetFirewallRule -ErrorAction SilentlyContinue | " +
                             "  Where-Object { $_.Name -ne $ours }) } catch {} " +
                             "@($named + $prog) | Sort-Object Name -Unique | Remove-NetFirewallRule -ErrorAction SilentlyContinue; " +
-                            "$r = Get-NetFirewallRule -Name $ours -ErrorAction SilentlyContinue; " +
-                            "if ($r) { Set-NetFirewallRule -Name $ours -DisplayName '" + Constants.FwDisplay + "' " +
+                            "Get-NetFirewallRule -Name $ours -ErrorAction SilentlyContinue | " +
+                            "  Remove-NetFirewallRule -ErrorAction SilentlyContinue; " +
+                            "New-NetFirewallRule -Name $ours -DisplayName '" + Constants.FwDisplay + "' " +
                             "-Direction Inbound -Action Allow -Enabled True -Profile Any -Protocol TCP " +
-                            "-LocalPort " + Constants.DefaultPort + " -RemoteAddress $subs } " +
-                            "else { New-NetFirewallRule -Name $ours -DisplayName '" + Constants.FwDisplay + "' " +
-                            "-Direction Inbound -Action Allow -Profile Any -Protocol TCP " +
-                            "-LocalPort " + Constants.DefaultPort + " -RemoteAddress $subs | Out-Null } " +
+                            "-LocalPort " + cfg.GetPort() + " -RemoteAddress $subs " + progArg + "| Out-Null; " +
                             "$now = (Get-NetFirewallRule -Name $ours | Get-NetFirewallAddressFilter).RemoteAddress -join ','; " +
                             "'DONE ' + $now " +
                             "} catch { 'ERR ' + $_.Exception.Message }";
@@ -329,7 +364,9 @@ namespace RealmChat
                         if (!outp.StartsWith("DONE"))
                             throw new Exception("firewall fix failed: " +
                                 (outp.StartsWith("ERR") ? outp.Substring(4) : outp));
-                        Logger.Log("fix: firewall rule now allows " + outp.Substring(5));
+                        Logger.Log("fix: firewall rule now allows " + outp.Substring(5) +
+                            (exePath == null ? " (ollama.exe not found - rule not program-bound yet)" :
+                             " (bound to " + exePath + ")"));
                     }
                     else if (flag.StartsWith("install="))
                     {
