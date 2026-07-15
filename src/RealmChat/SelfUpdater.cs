@@ -49,8 +49,10 @@ namespace RealmChat
             return m;
         }
 
-        // Returns true when the installed exe was replaced AND the caller is
-        // the installed exe, i.e. the caller must relaunch it and exit.
+        // Returns true when the installed exe now carries a newer version and
+        // the caller must relaunch Program.InstalledExe and exit - whether the
+        // running process WAS the installed copy (rename-swap) or a stray one
+        // (refresh + hand off).
         public bool Run()
         {
             string mine = Program.Version;
@@ -93,10 +95,13 @@ namespace RealmChat
                     return true;
                 }
 
+                // Running from a stray copy (Desktop/Downloads): refresh the
+                // installed exe and hand off to it - continuing this run would
+                // leave the user watching OLD code that just claimed to update.
                 Program.TryDelete(installed);
                 File.Move(fresh, installed);
-                log("Refreshed the installed copy at " + installed);
-                return false;
+                log("Updated the installed copy - switching to it.");
+                return true;
             }
             finally
             {
