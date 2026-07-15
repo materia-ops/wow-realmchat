@@ -1,0 +1,42 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  // Runs on home-ops' self-hosted Renovate workflow (this repo must be listed
+  // in its RENOVATE_AUTODISCOVER_FILTER + app-token repositories, and the
+  // github-bot App installed here).
+  extends: [
+    "config:recommended",
+    ":semanticCommits",
+    ":timezone(Australia/Melbourne)",
+  ],
+  customManagers: [
+    {
+      customType: "regex",
+      description: "Track the pinned Ollama release in Constants.cs (rolls to the host PC via self-update + one Fix problems click)",
+      managerFilePatterns: ["/^src/RealmChat/Constants\\.cs$/"],
+      matchStrings: ['OllamaVersion = "(?<currentValue>[0-9][0-9.]*)"'],
+      depNameTemplate: "ollama/ollama",
+      datasourceTemplate: "github-releases",
+      extractVersionTemplate: "^v(?<version>.*)$",
+    },
+  ],
+  // Releases here are the VERSION file + auto-patch on src/** merges (not
+  // release-please), so commit types don't drive versioning - they just keep
+  // the history conventional.
+  packageRules: [
+    {
+      description: "Ollama pin ships to the host PC - never automerge; merging cuts a release, the app self-updates, and the health card flags the version until Fix problems installs it (~1 GB download)",
+      matchDepNames: ["ollama/ollama"],
+      automerge: false,
+      semanticCommitType: "fix",
+      commitMessageTopic: "pinned Ollama",
+      prBodyNotes: [
+        "**Rollout:** merging releases a new RealmChat; the host PC self-updates, the health card shows the Ollama version mismatch, and one **Fix problems** click (admin prompt) downloads + installs the new Ollama. Skim the [Ollama release notes](https://github.com/ollama/ollama/releases) for llama3.1 / GPU regressions first.",
+      ],
+    },
+    {
+      description: "Build/CI-only - no shipped behavior change",
+      matchManagers: ["nuget", "github-actions"],
+      semanticCommitType: "chore",
+    },
+  ],
+}
