@@ -21,6 +21,13 @@ namespace RealmChat
             get { return running ?? (running = Draw(Color.FromArgb(0x2E, 0xB0, 0x6E))); }
         }
 
+        // The brand-blue mark (matches app.ico), for in-window use.
+        private static Icon brand;
+        public static Icon Brand
+        {
+            get { return brand ?? (brand = Draw(Color.FromArgb(0x25, 0x63, 0xEB))); }
+        }
+
         private static Icon Draw(Color fill)
         {
             using (var bmp = new Bitmap(32, 32))

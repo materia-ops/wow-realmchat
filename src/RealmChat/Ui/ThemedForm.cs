@@ -22,7 +22,7 @@ namespace RealmChat
         protected ThemedForm()
         {
             AutoScaleMode = AutoScaleMode.Font;
-            Font = SystemFonts.MessageBoxFont;
+            Font = Fonts.Body;
             DoubleBuffered = true;
             var ico = AppIcon.Get();
             if (ico != null) Icon = ico;
@@ -118,15 +118,44 @@ namespace RealmChat
                 return;
             }
 
-            c.BackColor = p.Background;
+            // Controls inside a card sit on the Surface color, not the form's.
+            c.BackColor = (c.Parent is CardPanel) ? p.Surface : p.Background;
             c.ForeColor = p.Text;
+        }
+    }
+
+    // Shared typography scale: one place so both windows stay in step.
+    public static class Fonts
+    {
+        public static readonly Font Body = Make("Segoe UI", 9.75f, FontStyle.Regular);
+        public static readonly Font Caption = Make("Segoe UI", 8.5f, FontStyle.Regular);
+        public static readonly Font Value = Make("Segoe UI Semibold", 9.75f, FontStyle.Regular);
+        public static readonly Font Title = Make("Segoe UI Semibold", 15f, FontStyle.Regular);
+        public static readonly Font Mono = Make("Consolas", 9f, FontStyle.Regular);
+
+        private static Font Make(string family, float size, FontStyle style)
+        {
+            try
+            {
+                var f = new Font(family, size, style);
+                // GDI falls back to a default family silently; detect and bold instead.
+                if (family.EndsWith("Semibold") && f.Name != family)
+                    return new Font("Segoe UI", size, FontStyle.Bold);
+                return f;
+            }
+            catch { return new Font(FontFamily.GenericSansSerif, size, style); }
         }
     }
 
     // Secondary text: captions, hints, footers. Tracks the muted token.
     public class MutedLabel : Label, IThemed
     {
-        public MutedLabel() { AutoSize = true; BackColor = Color.Transparent; }
+        public MutedLabel()
+        {
+            AutoSize = true;
+            BackColor = Color.Transparent;
+            Font = Fonts.Caption;
+        }
         public void ApplyTheme(Palette p) { ForeColor = p.TextMuted; }
     }
 

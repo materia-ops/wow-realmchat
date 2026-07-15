@@ -4,19 +4,20 @@ using System.Windows.Forms;
 
 namespace RealmChat
 {
-    // The activity log: a bordered surface wrapping a read-only TextBox, with
-    // an empty-state hint until the first line arrives. Keyboard-focusable so
-    // the log can be scrolled and copied without a mouse.
+    // The activity log: a bordered surface wrapping a read-only RichTextBox
+    // (per-line semantic colors), with an empty-state hint until the first
+    // line arrives. Keyboard-focusable so it can be scrolled/copied.
     public class LogBox : Panel, IThemed
     {
-        private readonly TextBox box = new TextBox
+        private readonly RichTextBox box = new RichTextBox
         {
-            Multiline = true,
             ReadOnly = true,
             BorderStyle = BorderStyle.None,
-            ScrollBars = ScrollBars.Vertical,
+            ScrollBars = RichTextBoxScrollBars.Vertical,
             Dock = DockStyle.Fill,
             AccessibleName = "Activity log",
+            Font = Fonts.Mono,
+            DetectUrls = false,
         };
 
         private readonly Label placeholder = new Label
@@ -27,6 +28,10 @@ namespace RealmChat
         };
 
         private Palette pal = Theme.Current;
+
+        // Inside a card the log reads as a recessed well: it takes the form's
+        // Background color instead of Surface so it stands off the card.
+        public bool Inset { get; set; }
 
         public LogBox()
         {
@@ -47,18 +52,45 @@ namespace RealmChat
         public void Append(string line)
         {
             if (placeholder.Visible) placeholder.Visible = false;
+            box.SelectionStart = box.TextLength;
+            box.SelectionColor = ColorFor(line);
             box.AppendText(line + Environment.NewLine);
+            box.SelectionStart = box.TextLength;
+            box.ScrollToCaret();
+        }
+
+        // Semantic line tinting: errors pop, good news reads green, the rest
+        // stays quiet.
+        private Color ColorFor(string line)
+        {
+            if (line.IndexOf("FAILED", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                line.IndexOf("FIREWALL:", StringComparison.Ordinal) >= 0 ||
+                line.IndexOf("Couldn't", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                line.IndexOf("failed", StringComparison.Ordinal) >= 0)
+                return pal.Danger;
+            if (line.IndexOf("ready", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                line.IndexOf("Updated", StringComparison.Ordinal) >= 0 ||
+                line.IndexOf("verified", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                line.IndexOf("healthy again", StringComparison.Ordinal) >= 0)
+                return pal.Success;
+            return pal.Text;
         }
 
         public void ApplyTheme(Palette p)
         {
             pal = p;
-            BackColor = p.Surface;
-            box.BackColor = p.Surface;
+            var back = Inset ? p.Background : p.Surface;
+            BackColor = back;
+            box.BackColor = back;
             box.ForeColor = p.Text;
-            placeholder.BackColor = p.Surface;
+            placeholder.BackColor = back;
             placeholder.ForeColor = p.TextMuted;
             Native.ThemeScrollbars(box, p.Dark);
+            // Re-tint existing lines so a live theme switch doesn't strand
+            // the old palette's colors.
+            box.SelectAll();
+            box.SelectionColor = p.Text;
+            box.DeselectAll();
             Invalidate();
         }
 

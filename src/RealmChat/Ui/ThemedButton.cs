@@ -55,7 +55,7 @@ namespace RealmChat
 
             var r = ClientRectangle;
             r.Width--; r.Height--;
-            int radius = Ui.Dpi(this, 6);
+            int radius = Ui.Dpi(this, 7);
 
             Color fill, textColor, border = Color.Empty;
             if (Primary)

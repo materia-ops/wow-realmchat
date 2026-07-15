@@ -21,6 +21,7 @@ namespace RealmChat
                      ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
             AccessibleRole = AccessibleRole.StaticText;
             TabStop = false;
+            Font = Fonts.Value;
         }
 
         public void ApplyTheme(Palette p) { pal = p; Invalidate(); }
@@ -42,7 +43,7 @@ namespace RealmChat
         public override Size GetPreferredSize(Size proposedSize)
         {
             var ts = TextRenderer.MeasureText(Text, Font);
-            return new Size(ts.Width + Ui.Dpi(this, 30), Ui.Dpi(this, 24));
+            return new Size(ts.Width + Ui.Dpi(this, 34), Ui.Dpi(this, 28));
         }
 
         private Color StateColor()
@@ -77,7 +78,11 @@ namespace RealmChat
             }
 
             int dot = Ui.Dpi(this, 8);
-            int dotX = Ui.Dpi(this, 10);
+            int dotX = Ui.Dpi(this, 12);
+            int ring = Ui.Dpi(this, 3);
+            // soft halo behind the dot lifts it off the tinted pill
+            using (var b = new SolidBrush(Color.FromArgb(60, state)))
+                g.FillEllipse(b, dotX - ring, (Height - dot) / 2 - ring, dot + ring * 2, dot + ring * 2);
             using (var b = new SolidBrush(state))
                 g.FillEllipse(b, dotX, (Height - dot) / 2, dot, dot);
 

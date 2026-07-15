@@ -18,9 +18,13 @@ namespace RealmChat
         private readonly AppConfig cfg;
         private readonly OllamaController ollama;
 
+        private readonly PictureBox logo = new PictureBox();
         private readonly Label lblTitle = new Label { AutoSize = true };
         private readonly MutedLabel lblSubtitle = new MutedLabel();
-        private readonly ThemedButton btnTheme = new ThemedButton();
+        private readonly ThemedSegmented segTheme = new ThemedSegmented();
+        private readonly CardPanel cardAction = new CardPanel();
+        private readonly CardPanel cardHealth = new CardPanel();
+        private readonly CardPanel cardActivity = new CardPanel();
         private readonly StatusPill pill = new StatusPill();
         private readonly ThemedButton btnToggle = new ThemedButton { Primary = true };
         private readonly BusyBar bar = new BusyBar();
@@ -57,37 +61,60 @@ namespace RealmChat
             Icon = AppIcons.Neutral;
             FormBorderStyle = FormBorderStyle.Sizable;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(584, 520);
+            ClientSize = new Size(600, 596);
             MinimumSize = Size;   // grow-only
 
+            int W = ClientSize.Width, pad = 16, cardW = W - pad * 2;
+
+            // --- header (sits on the form background) -------------------------
+            logo.Image = AppIcons.Brand.ToBitmap();
+            logo.SizeMode = PictureBoxSizeMode.Zoom;
+            logo.Size = new Size(30, 30);
+            logo.Location = new Point(pad, 16);
+            logo.BackColor = Color.Transparent;
+
             lblTitle.Text = "Realm Chat";
-            lblTitle.Font = new Font(Font.FontFamily, Font.Size * 1.35f, FontStyle.Bold);
-            lblTitle.Location = new Point(16, 14);
+            lblTitle.Font = Fonts.Title;
+            lblTitle.Location = new Point(pad + 38, 12);
 
-            btnTheme.Size = new Size(116, 28);
-            btnTheme.Location = new Point(ClientSize.Width - 16 - btnTheme.Width, 14);
-            btnTheme.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            btnTheme.Click += OnThemeClick;
-            tips.SetToolTip(btnTheme, "Cycle Auto / Light / Dark. Auto follows Windows.");
-
-            lblSubtitle.Location = new Point(17, 42);
+            lblSubtitle.Location = new Point(pad + 39, 40);
             lblSubtitle.Text = "The WoW bots' chat brain · " + Program.Version;
 
-            pill.Location = new Point(16, 66);
+            segTheme.Items = new[] { "Auto", "Light", "Dark" };
+            segTheme.Size = new Size(174, 28);
+            segTheme.Location = new Point(W - pad - segTheme.Width, 16);
+            segTheme.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            segTheme.AccessibleName = "Color theme";
+            segTheme.SelectedChanged += OnThemeSelected;
+            tips.SetToolTip(segTheme, "Auto follows Windows.");
+
+            // --- card 1: status + the one big action --------------------------
+            cardAction.Location = new Point(pad, 60);
+            cardAction.Size = new Size(cardW, 118);
+            cardAction.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            pill.Location = new Point(14, 12);
             pill.SetStatus(StatusKind.Neutral, "Checking…");
 
             btnToggle.Text = "Start chat";
-            btnToggle.Location = new Point(16, 98);
-            btnToggle.Size = new Size(ClientSize.Width - 32, 40);
+            btnToggle.Location = new Point(14, 50);
+            btnToggle.Size = new Size(cardW - 28, 40);
             btnToggle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             btnToggle.Click += OnToggleClick;
             AcceptButton = btnToggle;
 
-            bar.Location = new Point(16, 146);
-            bar.Size = new Size(ClientSize.Width - 32, 4);
+            bar.Location = new Point(14, 100);
+            bar.Size = new Size(cardW - 28, 4);
             bar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
-            capHealth.Location = new Point(17, 158);
+            cardAction.Controls.AddRange(new Control[] { pill, btnToggle, bar });
+
+            // --- card 2: health + management ----------------------------------
+            cardHealth.Location = new Point(pad, 190);
+            cardHealth.Size = new Size(cardW, 168);
+            cardHealth.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            capHealth.Location = new Point(14, 12);
             healthRows = new Label[4];
             for (int i = 0; i < healthRows.Length; i++)
             {
@@ -95,28 +122,28 @@ namespace RealmChat
                 {
                     AutoSize = false,
                     AutoEllipsis = true,
-                    Location = new Point(16, 178 + i * 19),
-                    Size = new Size(ClientSize.Width - 240, 17),
+                    Location = new Point(14, 34 + i * 21),
+                    Size = new Size(cardW - 172, 18),
                     Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 };
             }
 
             btnFix.Text = "Fix problems…";
-            btnFix.Size = new Size(118, 28);
-            btnFix.Location = new Point(ClientSize.Width - 16 - btnFix.Width, 172);
+            btnFix.Size = new Size(124, 29);
+            btnFix.Location = new Point(cardW - 14 - btnFix.Width, 30);
             btnFix.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnFix.Visible = false;
             btnFix.Click += OnFixClick;
 
             btnSettings.Text = "Settings…";
-            btnSettings.Size = new Size(118, 28);
-            btnSettings.Location = new Point(ClientSize.Width - 16 - btnSettings.Width, 206);
+            btnSettings.Size = new Size(124, 29);
+            btnSettings.Location = new Point(cardW - 14 - btnSettings.Width, 65);
             btnSettings.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnSettings.Click += OnSettingsClick;
 
             btnCleanup.Text = "Clean up…";
-            btnCleanup.Size = new Size(118, 28);
-            btnCleanup.Location = new Point(ClientSize.Width - 16 - btnCleanup.Width, 240);
+            btnCleanup.Size = new Size(124, 29);
+            btnCleanup.Location = new Point(cardW - 14 - btnCleanup.Width, 100);
             btnCleanup.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             btnCleanup.Visible = false;
             btnCleanup.Click += OnCleanupClick;
@@ -127,7 +154,7 @@ namespace RealmChat
             // The Ollama app likes to (re)write firewall rules behind our back,
             // which silently cuts the game server off - so watch while running.
             chkFwWatch.Text = "Watch the firewall while the chat runs";
-            chkFwWatch.Location = new Point(16, 256);
+            chkFwWatch.Location = new Point(14, 138);
             chkFwWatch.Checked = !cfg.disable_firewall_watch;
             chkFwWatch.CheckedChanged += delegate
             {
@@ -140,20 +167,32 @@ namespace RealmChat
                 "Re-checks the firewall every minute while the chat runs and warns if an\n" +
                 "Ollama-created rule breaks the game server's access to the model.");
 
-            capActivity.Location = new Point(17, 278);
-            log.Location = new Point(16, 298);
-            log.Size = new Size(ClientSize.Width - 32, 182);
-            log.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            cardHealth.Controls.Add(capHealth);
+            cardHealth.Controls.AddRange(healthRows);
+            cardHealth.Controls.AddRange(new Control[] { btnFix, btnSettings, btnCleanup, chkFwWatch });
+
+            // --- card 3: activity ---------------------------------------------
+            cardActivity.Location = new Point(pad, 370);
+            cardActivity.Size = new Size(cardW, ClientSize.Height - 370 - 34);
+            cardActivity.Anchor = AnchorStyles.Top | AnchorStyles.Bottom |
+                                  AnchorStyles.Left | AnchorStyles.Right;
+
+            capActivity.Location = new Point(14, 12);
+            log.Location = new Point(14, 34);
+            log.Size = new Size(cardW - 28, cardActivity.Height - 48);
+            log.Anchor = AnchorStyles.Top | AnchorStyles.Bottom |
+                         AnchorStyles.Left | AnchorStyles.Right;
+            log.Inset = true;
             log.PlaceholderText = "No activity yet — starts, stops, and updates are logged here.";
 
-            lblFooter.Location = new Point(16, ClientSize.Height - 28);
-            lblFooter.Size = new Size(ClientSize.Width - 32, 16);
+            cardActivity.Controls.AddRange(new Control[] { capActivity, log });
+
+            lblFooter.Location = new Point(pad + 1, ClientSize.Height - 26);
+            lblFooter.Size = new Size(cardW, 16);
             lblFooter.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
 
-            Controls.AddRange(new Control[] { lblTitle, btnTheme, lblSubtitle, pill,
-                btnToggle, bar, capHealth });
-            Controls.AddRange(healthRows);
-            Controls.AddRange(new Control[] { btnFix, btnSettings, btnCleanup, chkFwWatch, capActivity, log, lblFooter });
+            Controls.AddRange(new Control[] { logo, lblTitle, lblSubtitle, segTheme,
+                cardAction, cardHealth, cardActivity, lblFooter });
 
             // Tray: state at a glance, restore on double-click, control menu.
             tray.Icon = AppIcons.Neutral;
@@ -186,19 +225,25 @@ namespace RealmChat
             Shown += delegate { OnOpened(); };
             FormClosing += OnClosingForm;
 
+            // The firewall enumeration can take many seconds on rule-heavy
+            // machines; say so instead of showing an empty health card.
+            healthRows[0].Text = "Checking system health…";
+            healthRows[0].Visible = true;
+
             RefreshFooter();
         }
 
         protected override void OnThemeApplied(Palette p)
         {
-            btnTheme.Text = "Theme: " + Theme.Mode;
+            segTheme.SelectedIndex = Theme.Mode == ThemeMode.Light ? 1
+                                   : Theme.Mode == ThemeMode.Dark ? 2 : 0;
             PaintHealth();
         }
 
-        private void OnThemeClick(object sender, EventArgs e)
+        private void OnThemeSelected(int index)
         {
-            var next = Theme.Mode == ThemeMode.Auto ? ThemeMode.Light
-                     : Theme.Mode == ThemeMode.Light ? ThemeMode.Dark
+            var next = index == 1 ? ThemeMode.Light
+                     : index == 2 ? ThemeMode.Dark
                      : ThemeMode.Auto;
             cfg.theme = Theme.Serialize(next);
             cfg.Save();
