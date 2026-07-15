@@ -133,12 +133,17 @@ namespace RealmChat
                 if (parts[0] == "MISSING") { detail = "rule missing"; return false; }
                 if (parts[0] == "DISABLED") { detail = "rule disabled"; return false; }
 
+                // Windows often reports subnet entries in dotted-mask form
+                // (192.168.1.0/255.255.255.0) even when set as /24 - normalize
+                // both sides or the check can never match what it just set.
                 var have = parts[1].Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(s => s.Trim()).ToList();
-                var missing = expectSubnets.Where(s => !have.Contains(s, StringComparer.OrdinalIgnoreCase)).ToList();
+                    .Select(s => NormalizeCidr(s)).ToList();
+                var missing = expectSubnets.Select(NormalizeCidr)
+                    .Where(s => !have.Contains(s, StringComparer.OrdinalIgnoreCase)).ToList();
                 if (missing.Count > 0)
                 {
-                    detail = "missing subnet(s): " + string.Join(", ", missing.ToArray());
+                    detail = "missing subnet(s): " + string.Join(", ", missing.ToArray()) +
+                             " (rule has: " + (have.Count == 0 ? "none" : string.Join(", ", have.ToArray())) + ")";
                     return false;
                 }
                 if (foreign > 0)
@@ -176,6 +181,25 @@ namespace RealmChat
                 detail = "lookup failed: " + ex.Message;
                 return false;
             }
+        }
+
+        // "192.168.1.0/255.255.255.0" -> "192.168.1.0/24"; prefix/bare forms
+        // pass through unchanged.
+        internal static string NormalizeCidr(string s)
+        {
+            s = s.Trim();
+            int slash = s.IndexOf('/');
+            if (slash < 0) return s;
+            string ip = s.Substring(0, slash);
+            string right = s.Substring(slash + 1);
+            if (right.IndexOf('.') < 0) return ip + "/" + right;
+            System.Net.IPAddress mask;
+            if (!System.Net.IPAddress.TryParse(right, out mask)) return s;
+            int prefix = 0;
+            foreach (var b in mask.GetAddressBytes())
+                for (int bit = 7; bit >= 0; bit--)
+                    if ((b & (1 << bit)) != 0) prefix++;
+            return ip + "/" + prefix;
         }
 
         internal static string RunPs(string script)
@@ -280,6 +304,8 @@ namespace RealmChat
                         // those, including Block rules that cut the server off),
                         // then (re-)assert ours.
                         string script =
+                            "$ErrorActionPreference = 'Stop'; " +
+                            "try { " +
                             "$ours = '" + Constants.FwRuleName + "'; " +
                             "$subs = @(" + subnets + "); " +
                             "$named = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | " +
@@ -295,10 +321,15 @@ namespace RealmChat
                             "-LocalPort " + Constants.DefaultPort + " -RemoteAddress $subs } " +
                             "else { New-NetFirewallRule -Name $ours -DisplayName '" + Constants.FwDisplay + "' " +
                             "-Direction Inbound -Action Allow -Profile Any -Protocol TCP " +
-                            "-LocalPort " + Constants.DefaultPort + " -RemoteAddress $subs | Out-Null }; 'DONE'";
+                            "-LocalPort " + Constants.DefaultPort + " -RemoteAddress $subs | Out-Null } " +
+                            "$now = (Get-NetFirewallRule -Name $ours | Get-NetFirewallAddressFilter).RemoteAddress -join ','; " +
+                            "'DONE ' + $now " +
+                            "} catch { 'ERR ' + $_.Exception.Message }";
                         var outp = HealthCheck.RunPs(script);
-                        if (!outp.Contains("DONE")) throw new Exception("firewall script did not confirm");
-                        Logger.Log("fix: firewall reset to exactly one rule for " + subnets);
+                        if (!outp.StartsWith("DONE"))
+                            throw new Exception("firewall fix failed: " +
+                                (outp.StartsWith("ERR") ? outp.Substring(4) : outp));
+                        Logger.Log("fix: firewall rule now allows " + outp.Substring(5));
                     }
                     else if (flag.StartsWith("install="))
                     {

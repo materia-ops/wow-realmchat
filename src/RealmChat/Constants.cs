@@ -11,7 +11,7 @@ namespace RealmChat
     // self-update - no hands on the machine.
     public static class Constants
     {
-        public const string OllamaVersion = "0.31.2";                     // pinned release
+        public const string OllamaVersion = "0.32.0";                     // pinned release
         public const string Model = "llama3.1:8b-instruct-q4_K_M";        // exact tag (quantization matters)
         public const string KeepAlive = "4h";                             // OLLAMA_KEEP_ALIVE
         public const int DefaultPort = 11434;                             // Ollama default
