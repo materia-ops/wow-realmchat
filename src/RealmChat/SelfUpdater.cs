@@ -15,10 +15,18 @@ namespace RealmChat
         public string updaterVersion { get; set; }
     }
 
+    // A release whose SHA256SUMS carried a valid signature from the pinned
+    // release key, and whose manifest.json matched its entry in those sums.
+    public class VerifiedRelease
+    {
+        public Manifest Manifest;
+        public Dictionary<string, string> Sums;
+    }
+
     // Self-update engine, same contract as the ATT updater it was vendored
     // from: poll releases/latest/download/manifest.json (no API, no auth),
-    // verify the new exe against SHA256SUMS, rename the running exe aside,
-    // move the new one in, and have the caller relaunch.
+    // verify the new exe against the signed SHA256SUMS, rename the running
+    // exe aside, move the new one in, and have the caller relaunch.
     public class SelfUpdater
     {
         public static readonly HttpClient Http = CreateClient();
@@ -40,13 +48,28 @@ namespace RealmChat
             return c;
         }
 
-        public Manifest FetchManifest()
+        // The only way release metadata enters the process: SHA256SUMS must
+        // carry a valid signature from the pinned release key (SHA256SUMS.sig)
+        // and manifest.json must hash-match its entry in those sums. Nothing
+        // downstream (version compare, exe download) sees unverified data.
+        public VerifiedRelease Fetch()
         {
-            var json = GetString(cfg.GetBaseUrl() + "manifest.json");
-            var m = new JavaScriptSerializer().Deserialize<Manifest>(json);
+            byte[] sumsBytes = GetBytes(cfg.GetBaseUrl() + "SHA256SUMS");
+            byte[] sig = GetBytes(cfg.GetBaseUrl() + "SHA256SUMS.sig");
+            if (Program.Version == "dev")
+                log("dev build - SKIPPING release signature verification");
+            else if (!ReleaseKey.Verify(sumsBytes, sig))
+                throw new Exception("SHA256SUMS signature is invalid - refusing to proceed");
+
+            var sums = ParseSums(System.Text.Encoding.UTF8.GetString(sumsBytes));
+            byte[] manifestBytes = GetBytes(cfg.GetBaseUrl() + "manifest.json");
+            VerifyBytes(manifestBytes, "manifest.json", sums);
+
+            var m = new JavaScriptSerializer()
+                .Deserialize<Manifest>(System.Text.Encoding.UTF8.GetString(manifestBytes));
             if (m == null || string.IsNullOrEmpty(m.tag))
                 throw new Exception("release manifest is malformed");
-            return m;
+            return new VerifiedRelease { Manifest = m, Sums = sums };
         }
 
         // Returns true when the installed exe now carries a newer version and
@@ -62,7 +85,8 @@ namespace RealmChat
                 return false;
             }
 
-            var manifest = FetchManifest();
+            var release = Fetch();
+            var manifest = release.Manifest;
             if (string.IsNullOrEmpty(manifest.updaterVersion) || manifest.updaterVersion == mine)
             {
                 log("Up to date (" + manifest.tag + ").");
@@ -70,7 +94,7 @@ namespace RealmChat
             }
 
             log("Version " + manifest.updaterVersion + " available (running " + mine + ") - updating...");
-            var sums = ParseSums(GetString(cfg.GetBaseUrl() + "SHA256SUMS"));
+            var sums = release.Sums;
 
             var tmp = Path.Combine(Path.GetTempPath(), "realmchat-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tmp);
@@ -111,13 +135,13 @@ namespace RealmChat
 
         // --- HTTP + integrity (shared with the Ollama installer download) -----
 
-        public string GetString(string url)
+        public byte[] GetBytes(string url)
         {
             using (var resp = Http.GetAsync(url).GetAwaiter().GetResult())
             {
                 if (!resp.IsSuccessStatusCode)
                     throw new Exception("HTTP " + (int)resp.StatusCode + " fetching " + url);
-                return resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                return resp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
             }
         }
 
@@ -166,13 +190,23 @@ namespace RealmChat
 
         public static void Verify(string file, string name, Dictionary<string, string> sums)
         {
+            using (var sha = SHA256.Create())
+            using (var f = File.OpenRead(file))
+                CheckHash(sha.ComputeHash(f), name, sums);
+        }
+
+        public static void VerifyBytes(byte[] data, string name, Dictionary<string, string> sums)
+        {
+            using (var sha = SHA256.Create())
+                CheckHash(sha.ComputeHash(data), name, sums);
+        }
+
+        private static void CheckHash(byte[] hash, string name, Dictionary<string, string> sums)
+        {
             string want;
             if (!sums.TryGetValue(name, out want))
                 throw new Exception("SHA256SUMS has no entry for " + name);
-            string have;
-            using (var sha = SHA256.Create())
-            using (var f = File.OpenRead(file))
-                have = BitConverter.ToString(sha.ComputeHash(f)).Replace("-", "").ToLowerInvariant();
+            string have = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
             if (have != want)
                 throw new Exception("checksum mismatch for " + name + " - refusing to install");
         }
