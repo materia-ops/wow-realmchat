@@ -1,10 +1,15 @@
 # Builds RealmChat.exe and publishes a release on every push to main that
 # touches the app. This repo is public, so releases publish with the built-in
-# token - no secrets anywhere, and installed clients update tokenlessly via
-# releases/latest/download/.
+# token, and installed clients update tokenlessly via releases/latest/download/.
 #
 # updaterVersion is the git tree hash of src/RealmChat: it changes exactly
 # when the app's source does, which is what triggers client self-updates.
+#
+# Every release ships a signed SHA256SUMS (SHA256SUMS.sig, RSA key pinned in
+# ReleaseKey.cs): installed exes verify the signature before trusting anything,
+# so a compromised repo or token cannot feed the host PC a tampered build.
+# Needs the SIGNING_KEY repo secret (private key PEM; the matching public key
+# is committed as src/RealmChat/release-key.pub).
 name: release
 
 on:
@@ -26,7 +31,7 @@ jobs:
   release:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0   # tags needed for the version bump
 
@@ -52,14 +57,46 @@ jobs:
         shell: bash
         run: dotnet build src/RealmChat -c Release -o out "-p:UpdaterVersion=${{ steps.ver.outputs.updater }}"
 
-      - name: Manifest + checksums
+      # Same gate as PR CI: nothing unreleased-but-untested reaches the fleet
+      # (pushes to main can bypass a PR).
+      - name: Compile the test stub
+        shell: pwsh
+        run: |
+          & "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /out:out\ollama-stub.exe tools\OllamaStub\ollama-stub.cs
+          if (-not (Test-Path out\ollama-stub.exe)) { exit 1 }
+
+      - name: Build + run the tests
         shell: bash
+        env:
+          REALMCHAT_TEST_STUB: out/ollama-stub.exe
+          REALMCHAT_TEST_FIXTURES: tools/Tests/fixtures
+        run: |
+          dotnet build tools/Tests -c Release -o out-tests
+          ./out-tests/RealmChat.Tests.exe
+
+      # SHA256SUMS covers every other asset (manifest included) and is signed
+      # with the release key: installed exes verify SHA256SUMS.sig against the
+      # public key pinned in ReleaseKey.cs before trusting anything. The verify
+      # below uses the COMMITTED public key - if the SIGNING_KEY secret is ever
+      # rotated to a key that fielded exes would not trust, the release fails
+      # here instead of stranding the host PC.
+      - name: Manifest + signed checksums
+        shell: bash
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
         run: |
           cp out/RealmChat.exe .
           jq -n --arg tag "${{ steps.ver.outputs.tag }}" \
                 --arg uv "${{ steps.ver.outputs.updater }}" \
                 '{tag: $tag, updaterVersion: $uv}' > manifest.json
-          sha256sum RealmChat.exe > SHA256SUMS
+          sha256sum RealmChat.exe manifest.json > SHA256SUMS
+          umask 077
+          printf '%s\n' "$SIGNING_KEY" > "$RUNNER_TEMP/signing-key.pem"
+          openssl dgst -sha256 -sign "$RUNNER_TEMP/signing-key.pem" \
+            -out SHA256SUMS.sig SHA256SUMS
+          rm -f "$RUNNER_TEMP/signing-key.pem"
+          openssl dgst -sha256 -verify src/RealmChat/release-key.pub \
+            -signature SHA256SUMS.sig SHA256SUMS
 
       - name: Publish release
         shell: bash
@@ -72,8 +109,11 @@ jobs:
           First install: download RealmChat.exe, run it, follow the one-time setup.
           It keeps itself up to date automatically from then on.
 
-          Integrity: \`sha256sum -c SHA256SUMS\` against the exe in this release."
-          gh release create "$TAG" RealmChat.exe SHA256SUMS manifest.json \
+          Integrity: \`sha256sum -c SHA256SUMS\` against the exe in this release.
+          SHA256SUMS.sig is an RSA-SHA256 signature over SHA256SUMS by the release
+          key (src/RealmChat/release-key.pub); the app verifies it against its
+          pinned copy before installing anything."
+          gh release create "$TAG" RealmChat.exe SHA256SUMS SHA256SUMS.sig manifest.json \
             --repo "$GITHUB_REPOSITORY" \
             --title "WoW Realm Chat ${TAG}" \
             --notes "$NOTES"

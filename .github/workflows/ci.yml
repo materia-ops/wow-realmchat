@@ -1,5 +1,6 @@
-# Compile gate for PRs: the app must build with the same toolchain the
-# release workflow uses, and the test stub must stay compilable.
+# Gate for PRs: the app must build with the same toolchain the release
+# workflow uses, and the full test suite (unit + fixture-signature + stub E2E)
+# must pass.
 name: ci
 
 on:
@@ -16,7 +17,7 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Build RealmChat.exe (net48)
         shell: bash
@@ -27,3 +28,12 @@ jobs:
         run: |
           & "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe" /nologo /out:out\ollama-stub.exe tools\OllamaStub\ollama-stub.cs
           if (-not (Test-Path out\ollama-stub.exe)) { exit 1 }
+
+      - name: Build + run the tests
+        shell: bash
+        env:
+          REALMCHAT_TEST_STUB: out/ollama-stub.exe
+          REALMCHAT_TEST_FIXTURES: tools/Tests/fixtures
+        run: |
+          dotnet build tools/Tests -c Release -o out-tests
+          ./out-tests/RealmChat.Tests.exe
