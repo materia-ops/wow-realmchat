@@ -72,8 +72,9 @@ signature over `SHA256SUMS` by the release key pinned inside the exe
 (`src/RealmChat/ReleaseKey.cs`, committed as `release-key.pub`), the manifest
 must hash-match its entry in those sums, and so must the downloaded exe
 before the running one is swapped (rename-aside + relaunch, with rollback).
-CI signs with the `SIGNING_KEY` repo secret and refuses to publish a release
-the committed public key wouldn't verify — so even a compromised repo or
+CI signs with the release key, which lives only in 1Password and is injected
+at release time via the `OP_RELEASE_TOKEN` repo secret, and refuses to publish
+a release the committed public key wouldn't verify — so even a compromised repo or
 Actions token cannot feed installed clients a tampered build. Key rotation
 is two-phase: ship an exe trusting the new key first, sign with it only
 after the fleet updated.
@@ -91,6 +92,34 @@ it lives now:
 | model storage folder | Settings (Browse; defaults to `C:\ProgramData\Ollama\models`) |
 | pinned Ollama version / model / keep-alive | `src/RealmChat/Constants.cs` — deliberately maintainer-only: a merge rolls the change to the host PC via self-update |
 | port | `config.json` `port` override only — deliberately hidden: the game server expects the default, changing it unilaterally silences the bots |
+
+## Troubleshooting / FAQ
+
+- **Windows warned me when I first ran it (SmartScreen).** Expected for a
+  small unsigned-by-a-CA download: click **More info → Run anyway**. It only
+  happens on a freshly downloaded exe — self-updates install silently. Release
+  integrity comes from the signed checksums described above, and you can
+  [verify a release by hand](docs/CI-CD-WORKFLOW.md#verifying-a-release-by-hand).
+- **Where is the log?** `%LOCALAPPDATA%\RealmChat\realmchat.log` (next to
+  `config.json`; under `REALMCHAT_HOME` instead if you set that). One line per
+  event, self-trimming — the log plus tray toasts are the app's only
+  observability, so it's the first thing to read or send when asking for help.
+- **What version am I on?** Open the window: the version is shown right under
+  the title. It's also written to the log on every daily update check.
+- **The bots went silent.** In order:
+  1. Is Realm Chat still running? Look for its tray icon (closing the window
+     while the chat runs only minimizes to the tray). If it's gone, start the
+     app and press **Start chat**.
+  2. Open the window — did it stop the chat? If Ollama died on its own the
+     app toasts "Ollama exited unexpectedly" and the big button is back to
+     **Start chat**; press it.
+  3. Any warnings in the health list (Ollama version, system settings,
+     firewall, address)? Click **Fix problems**. A blocking firewall rule
+     added by Windows or the Ollama app is the #1 silent killer — the app
+     toasts "Realm chat firewall problem" when its minute-by-minute firewall
+     watch catches one, and **Fix problems** removes it.
+  4. Still silent? Check `realmchat.log` for the start/stop history and any
+     `FAILED` lines.
 
 ## Development
 
