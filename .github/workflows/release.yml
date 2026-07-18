@@ -88,7 +88,7 @@ jobs:
         uses: 1password/load-secrets-action@3a12b0ab99d9cd590a3e9b5a90ea017210ed9556 # v4.0.1 # zizmor: ignore[unpinned-tools]
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_RELEASE_TOKEN }}
-          SIGNING_KEY: op://materia-realmchat/wow-realmchat/SIGNING_KEY
+          SIGNING_KEY: op://release-realmchat/wow-realmchat/SIGNING_KEY
 
       - name: Manifest + signed checksums
         shell: bash
