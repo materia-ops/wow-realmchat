@@ -14,7 +14,7 @@ namespace RealmChat
     // name are entered once at first run.
     public class AppConfig
     {
-        public const string DefaultRepo = "Malpractis/wow-realmchat";
+        public const string DefaultRepo = "materia-ops/wow-realmchat";
 
         public bool setup_done { get; set; }
         public string theme { get; set; }             // "auto" | "light" | "dark" (null = auto)

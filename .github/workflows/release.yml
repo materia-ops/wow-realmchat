@@ -8,8 +8,9 @@
 # Every release ships a signed SHA256SUMS (SHA256SUMS.sig, RSA key pinned in
 # ReleaseKey.cs): installed exes verify the signature before trusting anything,
 # so a compromised repo or token cannot feed the host PC a tampered build.
-# Needs the SIGNING_KEY repo secret (private key PEM; the matching public key
-# is committed as src/RealmChat/release-key.pub).
+# The private key PEM comes from 1Password (op://release-realmchat/
+# wow-realmchat/SIGNING_KEY) via the OP_RELEASE_TOKEN repo secret; the
+# matching public key is committed as src/RealmChat/release-key.pub.
 name: release
 
 on:
@@ -80,9 +81,9 @@ jobs:
       # SHA256SUMS covers every other asset (manifest included) and is signed
       # with the release key: installed exes verify SHA256SUMS.sig against the
       # public key pinned in ReleaseKey.cs before trusting anything. The verify
-      # below uses the COMMITTED public key - if the SIGNING_KEY secret is ever
-      # rotated to a key that fielded exes would not trust, the release fails
-      # here instead of stranding the host PC.
+      # below uses the COMMITTED public key - if the 1Password SIGNING_KEY is
+      # ever rotated to a key that fielded exes would not trust, the release
+      # fails here instead of stranding the host PC.
       - name: Load signing key
         id: op-signing
         uses: 1password/load-secrets-action@3a12b0ab99d9cd590a3e9b5a90ea017210ed9556 # v4.0.1 # zizmor: ignore[unpinned-tools]

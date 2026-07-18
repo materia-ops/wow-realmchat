@@ -158,7 +158,7 @@ namespace RealmChat.Tests
         {
             Console.WriteLine("AppConfig:");
             var cfg = new AppConfig();
-            Check(cfg.GetBaseUrl() == "https://github.com/Malpractis/wow-realmchat/releases/latest/download/",
+            Check(cfg.GetBaseUrl() == "https://github.com/materia-ops/wow-realmchat/releases/latest/download/",
                   "default base url points at the releases repo");
             cfg.base_url = "http://127.0.0.1:9/custom";
             Check(cfg.GetBaseUrl() == "http://127.0.0.1:9/custom/", "override gains a trailing slash");

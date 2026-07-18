@@ -4,13 +4,15 @@ using System.Security.Cryptography;
 namespace RealmChat
 {
     // Pinned release-signing public key. CI signs SHA256SUMS with the matching
-    // private key (SIGNING_KEY repo secret); a release whose signature does
-    // not verify against THIS key is refused outright, so a compromised repo
-    // (or its Actions token) cannot feed installed clients a tampered build.
+    // private key (fetched from 1Password via the OP_RELEASE_TOKEN secret:
+    // op://release-realmchat/wow-realmchat/SIGNING_KEY); a release whose
+    // signature does not verify against THIS key is refused outright, so a
+    // compromised repo (or its Actions token) cannot feed installed clients a
+    // tampered build.
     //
     // The same key is committed as src/RealmChat/release-key.pub, and the
     // release workflow verifies each SHA256SUMS.sig against that file before
-    // publishing - so a SIGNING_KEY secret that no longer matches this pin
+    // publishing - so a 1Password signing key that no longer matches this pin
     // fails the release, not the fielded clients.
     //
     // Rotation MUST be two-phase: ship an exe that trusts the new key first,
