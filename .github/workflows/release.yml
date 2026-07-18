@@ -30,6 +30,9 @@ concurrency:
 jobs:
   release:
     runs-on: windows-latest
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -118,13 +121,70 @@ jobs:
             --title "WoW Realm Chat ${TAG}" \
             --notes "$NOTES"
 
-      - name: Bump VERSION
-        shell: bash
+  # Bookkeeping only: the release is published by this point. The bump lands
+  # via an auto-merged PR because the org ruleset blocks direct pushes to
+  # main; GITHUB_TOKEN cannot open PRs (disabled org-wide), so the minion app
+  # token does. Separate ubuntu job: the 1Password action is not exercised on
+  # windows runners anywhere else in the fleet. The squash SUBJECT keeps
+  # [skip ci]: VERSION is a trigger path for this workflow, so without it
+  # every release immediately re-triggers another.
+  bump:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Load secrets
+        id: load-secrets
+        uses: 1password/load-secrets-action@3a12b0ab99d9cd590a3e9b5a90ea017210ed9556 # v4.0.1
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GITHUB_BOT_APP_CLIENT_ID: op://ci/github-bot/GITHUB_BOT_APP_CLIENT_ID
+          GITHUB_BOT_APP_PRIVATE_KEY: op://ci/github-bot/GITHUB_BOT_APP_PRIVATE_KEY
+
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ steps.load-secrets.outputs.GITHUB_BOT_APP_CLIENT_ID }}
+          private-key: ${{ steps.load-secrets.outputs.GITHUB_BOT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Bump VERSION via PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+          VER: ${{ needs.release.outputs.version }}
         run: |
-          echo "${{ steps.ver.outputs.version }}" > VERSION
-          if git diff --quiet VERSION; then exit 0; fi
+          echo "$VER" > VERSION
+          if git diff --quiet VERSION; then
+            echo "nothing to commit"
+            exit 0
+          fi
+          BRANCH="release-bump/${TAG}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
           git add VERSION
-          git commit -m "Release ${{ steps.ver.outputs.tag }} [skip ci]"
-          git push origin HEAD:main
+          git commit -m "Release ${TAG} [skip ci]"
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Release ${TAG}" \
+            --body "Automated post-release bookkeeping: VERSION -> \`${VER}\`. The release is already published; merging this only records it."
+          merged=false
+          for i in 1 2 3 4 5; do
+            if gh pr merge "$BRANCH" --squash --delete-branch \
+                 --subject "Release ${TAG} [skip ci]" --body ""; then
+              merged=true; break
+            fi
+            echo "merge attempt $i failed (mergeability may still be computing); retrying"
+            sleep 5
+          done
+          if [ "$merged" != true ]; then
+            echo "::error::bump PR for ${TAG} did not merge; VERSION is stale and the next push re-releases"
+            exit 1
+          fi
