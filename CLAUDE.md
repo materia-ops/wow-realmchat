@@ -2,7 +2,7 @@
 
 .NET WinForms self-updating launcher (net48 target, built with the
 .NET 8 SDK) that runs the local Ollama chat model behind a WoW private
-server's AI bot chatter, on an unattended non-technical user's PC.
+server's AI bot chatter, on an unattended remote machine.
 Reliability of the update path and zero-support-call operation outrank
 features: an unsigned-update regression on an unattended machine is the
 worst possible bug here.
@@ -27,7 +27,8 @@ worst possible bug here.
    steps in `.github/workflows/ci.yml`):
    `dotnet build tools/Tests -c Release -o out-tests` →
    `./out-tests/RealmChat.Tests.exe`
-3. UI changes: run the app and screenshot it.
+3. UI changes: run the app, check it visually, and attach a screenshot
+   to the PR.
 4. PR body states "touches update flow: yes/no" — mandatory.
 
 ## Release model

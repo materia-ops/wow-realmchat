@@ -31,5 +31,5 @@ CI (build + full test suite, including the controller E2E against the
 Ollama stub) must be green; a red suite blocks the merge. Local steps and
 the rest of the pipeline rules — the stub as executable spec, the signed
 test fixtures, key rotation — are in
-[docs/CI-CD-WORKFLOW.md](docs/CI-CD-WORKFLOW.md). UI changes: run the app
-and check the result visually.
+[docs/CI-CD-WORKFLOW.md](docs/CI-CD-WORKFLOW.md). UI changes: run the app,
+check the result visually, and attach a screenshot to the PR.
