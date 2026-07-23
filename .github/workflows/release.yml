@@ -86,7 +86,7 @@ jobs:
       # fails here instead of stranding the host PC.
       - name: Load signing key
         id: op-signing
-        uses: 1password/load-secrets-action@3a12b0ab99d9cd590a3e9b5a90ea017210ed9556 # v4.0.1 # zizmor: ignore[unpinned-tools]
+        uses: 1password/load-secrets-action@eb2efd0703da22a93c467f2d1ffbb6826c11e19c # v4.1.1 # zizmor: ignore[unpinned-tools]
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_RELEASE_TOKEN }}
           SIGNING_KEY: op://release-realmchat/wow-realmchat/SIGNING_KEY
@@ -147,7 +147,7 @@ jobs:
 
       - name: Load secrets
         id: load-secrets
-        uses: 1password/load-secrets-action@3a12b0ab99d9cd590a3e9b5a90ea017210ed9556 # v4.0.1
+        uses: 1password/load-secrets-action@eb2efd0703da22a93c467f2d1ffbb6826c11e19c # v4.1.1
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           GITHUB_BOT_APP_CLIENT_ID: op://ci/github-bot/GITHUB_BOT_APP_CLIENT_ID
