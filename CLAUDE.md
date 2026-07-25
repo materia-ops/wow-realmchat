@@ -35,3 +35,11 @@ worst possible bug here.
 - The `VERSION` file drives releases; the release workflow resolves the
   next free `vX.Y.Z` tag itself. Bump VERSION only when the task is an
   actual release.
+
+## Work docs
+
+Code-describing docs (architecture, CI, troubleshooting) live in this
+repo. Work-describing docs — decisions, plans, handovers, reviews,
+prompts, anything cross-repo — live in the private
+`materia-ops/materia-vault` Obsidian vault; its root CLAUDE.md holds
+the note contract.
