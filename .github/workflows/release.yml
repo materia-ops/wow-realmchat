@@ -22,7 +22,7 @@ on:
       - ".github/workflows/release.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release
@@ -31,6 +31,8 @@ concurrency:
 jobs:
   release:
     runs-on: windows-latest
+    permissions:
+      contents: write # gh release create with the built-in token
     outputs:
       tag: ${{ steps.ver.outputs.tag }}
       version: ${{ steps.ver.outputs.version }}
@@ -139,6 +141,8 @@ jobs:
   bump:
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # the branch push below rides the checkout's persisted token
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
