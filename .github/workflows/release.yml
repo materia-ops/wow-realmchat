@@ -40,6 +40,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0   # tags needed for the version bump
+          persist-credentials: false
 
       - name: Version stamps
         id: ver
@@ -146,7 +147,9 @@ jobs:
     permissions:
       contents: write # the branch push below rides the checkout's persisted token
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # Deliberate credential persistence: the bump step's `git push origin
+      # $BRANCH` below rides this checkout's token (main stays ruleset-protected).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 # zizmor: ignore[artipacked]
         with:
           ref: main
           fetch-depth: 0
