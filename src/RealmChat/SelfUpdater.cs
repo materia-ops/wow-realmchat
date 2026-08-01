@@ -87,6 +87,10 @@ namespace RealmChat
 
             var release = Fetch();
             var manifest = release.Manifest;
+            // Equality, not ordering, on purpose: updaterVersion is the git
+            // tree hash of src/RealmChat (release.yml), so "different" is the
+            // only meaningful comparison — it changes exactly when the shipped
+            // source changes, and hashes cannot be ordered.
             if (string.IsNullOrEmpty(manifest.updaterVersion) || manifest.updaterVersion == mine)
             {
                 log("Up to date (" + manifest.tag + ").");
@@ -110,10 +114,23 @@ namespace RealmChat
                 if (string.Equals(self, installed, StringComparison.OrdinalIgnoreCase))
                 {
                     // A running exe can't be overwritten, but it CAN be renamed.
+                    //
+                    // Stage the verified exe into the install directory FIRST.
+                    // `fresh` lives in %TEMP%, which is often a different
+                    // volume, so moving it straight over `installed` would be
+                    // a full byte copy performed while no installed exe
+                    // exists — kill the process there and an unattended
+                    // machine has nothing left for the scheduled task to
+                    // launch. Staging first reduces that gap to two renames
+                    // within one directory.
+                    string staged = installed + ".new";
+                    Program.TryDelete(staged);
+                    File.Copy(fresh, staged);
+
                     string old = installed + ".old";
                     Program.TryDelete(old);
                     File.Move(installed, old);
-                    try { File.Move(fresh, installed); }
+                    try { File.Move(staged, installed); }
                     catch { File.Move(old, installed); throw; }
                     log("Updated - restarting.");
                     return true;
