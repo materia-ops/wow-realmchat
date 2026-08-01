@@ -228,11 +228,18 @@ namespace RealmChat
 
         private static void CleanupOldExe()
         {
-            string old = InstalledExe + ".old";
-            for (int i = 0; i < 6 && File.Exists(old); i++)
+            // .old is the previous exe, still locked for a moment by the
+            // process that just exited. .new is the staging copy SelfUpdater
+            // writes beside the installed exe; it is normally renamed away,
+            // but a crash between the copy and the rename would leave a full
+            // exe sitting there until the next update overwrote it.
+            foreach (var leftover in new[] { InstalledExe + ".old", InstalledExe + ".new" })
             {
-                try { File.Delete(old); }
-                catch { Thread.Sleep(500); }
+                for (int i = 0; i < 6 && File.Exists(leftover); i++)
+                {
+                    try { File.Delete(leftover); }
+                    catch { Thread.Sleep(500); }
+                }
             }
         }
 
