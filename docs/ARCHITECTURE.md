@@ -82,7 +82,7 @@ the .NET Framework:
 | `Constants.cs` | the pinned knobs (Ollama version, model tag, keep-alive, default port, firewall rule identity). The only tuning surface that ships in the binary |
 | `AppConfig.cs` | `config.json` load/save; property names ARE the JSON schema (see §4) |
 | `OllamaController.cs` | owns the `ollama serve` child process and everything HTTP about it: health, model presence, warm-up, pull, rm. No WinForms dependency — this is the E2E-testable core |
-| `HealthCheck.cs` | the unprivileged checks (pinned version installed, machine env vars, firewall state, DNS name) + `ElevatedFix`, the single elevated self-invocation that repairs all of them |
+| `HealthCheck.cs` | the unprivileged checks (pinned version installed, machine env vars, firewall state, DNS name) + `ElevatedFix`, the single elevated self-invocation that repairs the admin-fixable ones (install/env/firewall — a DNS mismatch is a server-side record, not fixable from this PC) |
 | `SelfUpdater.cs` | the update engine: verified fetch (`Fetch()`), download, hash check, rename-aside swap with rollback |
 | `ReleaseKey.cs` | the pinned RSA-3072 release public key and signature verification |
 | `ScheduledTask.cs` | registers the logon + daily `--silent` task via `schtasks /XML`; `StartMenu` shortcut |
