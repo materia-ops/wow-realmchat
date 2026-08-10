@@ -121,6 +121,9 @@ self-update is itself gated by the old key. Therefore:
    PC(s), or just give it >24 h).
 4. Only now put the new private key in the 1Password item CI signs from.
    The next release is signed by it; the (updated) fleet accepts it.
+   Refresh the key fingerprint in the materia-ops/.github profile README in
+   the same change window (the in-repo `release-key.pub` copy was already
+   updated in step 2).
 
 Swapping steps 2 and 4 bricks self-update on every fielded exe: they'd
 refuse the new signature forever and need a manual reinstall. If the private
