@@ -73,7 +73,8 @@ signature over `SHA256SUMS` by the release key pinned inside the exe
 must hash-match its entry in those sums, and so must the downloaded exe
 before the running one is swapped (rename-aside + relaunch, with rollback).
 CI signs with the release key, which lives only in 1Password and is injected
-at release time via the `OP_RELEASE_TOKEN` repo secret, and refuses to publish
+at release time via the `OP_RELEASE_TOKEN` secret of the main-only `ci-main`
+Environment, and refuses to publish
 a release the committed public key wouldn't verify — so even a compromised repo or
 Actions token cannot feed installed clients a tampered build. Key rotation
 is two-phase: ship an exe trusting the new key first, sign with it only
