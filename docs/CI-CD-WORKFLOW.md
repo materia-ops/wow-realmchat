@@ -36,7 +36,7 @@ don't even run the release workflow).
    - writes `manifest.json`, hashes exe + manifest into `SHA256SUMS`, signs
      it with the release key — fetched from 1Password at that moment via
      `1password/load-secrets-action`, authenticated by the `OP_RELEASE_TOKEN`
-     repo secret — and **self-verifies the signature against the committed
+     secret of the `ci-main` Environment — and **self-verifies the signature against the committed
      `src/RealmChat/release-key.pub`**: a key that fielded exes wouldn't
      trust fails the release here, loudly, instead of stranding the fleet;
    - publishes the release (exe, sums, sig, manifest);
@@ -88,8 +88,9 @@ match the paths above, run from the repo root).
 | where | what |
 |---|---|
 | 1Password | the only home of the RSA-3072 private key PEM. The release job loads it at signing time (`1password/load-secrets-action`; the env var is still named `SIGNING_KEY`) — it is **not** a GitHub repo secret. No key, no releases the fleet will accept |
-| repo secret `OP_RELEASE_TOKEN` | 1Password service-account token that authorizes that load — the only signing-related credential GitHub holds |
-| repo secret `OP_SERVICE_ACCOUNT_TOKEN` | 1Password service-account token the `bump` job uses to load the github-bot App credentials |
+| `ci-main` Environment secret `OP_RELEASE_TOKEN` | 1Password service-account token that authorizes that load — the only signing-related credential GitHub holds |
+| `ci-main` Environment secret `OP_CI_SERVICE_ACCOUNT_TOKEN` | 1Password service-account token the `bump` job uses to load the github-bot App credentials |
+| `ci-main` GitHub Environment | deployable from `main` only; the `release` and `bump` jobs declare it, so no PR or branch run can read either 1Password token |
 | github-bot GitHub App | mints the short-lived token that opens and auto-merges the `release-bump/<tag>` VERSION PR (the org disables PRs from `GITHUB_TOKEN` and the ruleset blocks direct pushes) |
 | `src/RealmChat/release-key.pub` | committed public key; CI's pre-publish self-verify |
 | `src/RealmChat/ReleaseKey.cs` | the same key's modulus, pinned in the exe; clients verify with it (RSA PKCS#1 v1.5, SHA-256) |
@@ -149,7 +150,7 @@ openssl dgst -sha256 -verify src/RealmChat/release-key.pub \
 | release run failed at "Load signing key" | `OP_RELEASE_TOKEN` secret missing/expired/revoked, or the workflow's `op://` item path no longer matches the 1Password item — fix the token or the item |
 | release run failed at "Manifest + signed checksums" | the loaded key isn't a valid PEM — check the 1Password item's contents |
 | release run failed at the openssl verify | the 1Password key doesn't match the committed pubkey — you're mid-rotation out of order; restore the old key or finish phase 1 first |
-| release published but the `bump` job failed | `OP_SERVICE_ACCOUNT_TOKEN` or the github-bot App credentials/auth broke, or the bump PR wouldn't merge — the release itself is fine, but `VERSION` is stale until it lands; fix the auth and re-run the failed job (the tag-collision loop keeps stale-`VERSION` releases safe meanwhile) |
+| release published but the `bump` job failed | `OP_CI_SERVICE_ACCOUNT_TOKEN` or the github-bot App credentials/auth broke, or the bump PR wouldn't merge — the release itself is fine, but `VERSION` is stale until it lands; fix the auth and re-run the failed job (the tag-collision loop keeps stale-`VERSION` releases safe meanwhile) |
 | release published but clients don't update | did `src/RealmChat/` actually change? Test/doc/tool-only merges don't bump `updaterVersion` (by design) |
 | clients toast "updater needs attention" | 3+ failed checks — usually the release is missing an asset (all four are required) or was created by hand |
 | CI green locally, red on the runner | line endings on fixtures (check `.gitattributes` survived), or the stub wasn't rebuilt after an API-surface change |
