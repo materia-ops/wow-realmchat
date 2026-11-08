@@ -9,9 +9,8 @@
 # ReleaseKey.cs): installed exes verify the signature before trusting anything,
 # so a compromised repo or token cannot feed the host PC a tampered build.
 # The private key PEM comes from 1Password (op://release-realmchat/
-# wow-realmchat/SIGNING_KEY) via the OP_RELEASE_TOKEN secret of the main-only
-# ci-main Environment; the matching public key is committed as
-# src/RealmChat/release-key.pub.
+# wow-realmchat/SIGNING_KEY) via the OP_RELEASE_TOKEN secret; the matching
+# public key is committed as src/RealmChat/release-key.pub.
 name: release
 
 on:
@@ -32,7 +31,6 @@ concurrency:
 jobs:
   release:
     runs-on: windows-latest
-    # 1Password tokens live only in this main-only Environment.
     environment: ci-main
     permissions:
       contents: write # gh release create with the built-in token
