@@ -10,12 +10,14 @@ is the staging environment.
 ## Rules
 
 - **Commits are [Conventional](https://www.conventionalcommits.org/)**:
-  `type(scope): summary`.
+  `type(scope): summary`. The type only keeps the history readable — this
+  repo is not on release-please, so a `chore` or `docs` commit that touches
+  a release path still ships a release.
 - **Every PR body must state `touches update flow: yes/no`** — mandatory,
   no exceptions. An unsigned-update regression on an unattended machine is
   the worst possible bug here, so changes near the update path must keep
   signature verification intact and add explicit failure-case tests (bad
-  signature, partial download, version regression).
+  signature, tampered manifest, hash mismatch / truncated download).
 - **Never edit `VERSION` or create tags/releases by hand** — the release
   workflow owns them (it resolves the next tag and bumps `VERSION` back
   itself). The only manual `VERSION` change is a deliberate major/minor
