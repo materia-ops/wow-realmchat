@@ -39,6 +39,11 @@ namespace RealmChat
         public string last_check_utc { get; set; }
         public string last_result { get; set; }
 
+        // Last "installed Ollama isn't the pinned one" toast: which pin it was
+        // about and the local day (yyyy-MM-dd) - one notice per pin per day.
+        public string ollama_notice_pin { get; set; }
+        public string ollama_notice_day { get; set; }
+
         // Previous model-store locations, recorded when the folder is changed
         // in Settings so Cleanup can offer to reclaim them later.
         public string old_models_dirs { get; set; }

@@ -18,7 +18,12 @@ everything on the machine healthy and up to date by itself.
 - **Health & repair**: on every open it verifies the Ollama install (exact
   pinned version), system settings, and the scoped firewall rule — one
   **Fix problems** click (a single admin prompt) repairs all of it, including
-  installing Ollama itself. There is no separate setup script to run.
+  installing Ollama itself. There is no separate setup script to run. The
+  one check that doesn't wait for the window to be opened is the Ollama
+  version: when the installed Ollama isn't the pinned one, the app says so
+  with a toast (installed vs pinned, and what to click) — from the daily
+  update check, and from the tray app itself while it stays running. At most
+  once a day per pinned version; every check also writes it to the log.
 - **Firewall watch**: the Ollama app / Windows likes to add its own firewall
   rules for `ollama.exe`, which can silently block the game server's access to
   a perfectly healthy local model. While the chat runs, the app re-checks the
@@ -39,9 +44,10 @@ everything on the machine healthy and up to date by itself.
   silently (the update task never starts the chat — that stays a human
   decision, with one opt-in exception below). Pinned model/version changes
   ship as app updates. The one hands-on step: after an update that pins a
-  new Ollama version, the health list shows a version warning the next time
-  the window is opened, until someone clicks **Fix problems** once (admin
-  prompt, about a 1 GB download).
+  new Ollama version, the PC gets an "Ollama needs updating" toast (repeated
+  daily) and the health list shows a version warning, until someone clicks
+  **Fix problems** once (admin prompt, about a 1 GB download). The chat
+  keeps working on the installed version meanwhile.
 - **Auto-resume (opt-in)**: a checkbox in setup makes the chat come back by
   itself shortly after a reboot — but only when it was running before the
   machine went down. Windows Update restarting the PC overnight no longer
@@ -94,7 +100,7 @@ it lives now:
 | expected address check | Settings ("DNS name" — validated by lookup, no hardcoded IP) |
 | auto-resume after reboot | Settings checkbox (default off; resumes only a chat that was running) |
 | model storage folder | Settings (Browse; defaults to `C:\ProgramData\Ollama\models`) |
-| pinned Ollama version / model / keep-alive | `src/RealmChat/Constants.cs` — deliberately maintainer-only: a merge rolls the change to the host PC via self-update (a new Ollama version then needs one **Fix problems** click there) |
+| pinned Ollama version / model / keep-alive | `src/RealmChat/Constants.cs` — deliberately maintainer-only: a merge rolls the change to the host PC via self-update (a new Ollama version then needs one **Fix problems** click there, which the app asks for with a daily toast) |
 | port | `config.json` `port` override only — deliberately hidden: the game server expects the default, changing it unilaterally silences the bots |
 
 ## Troubleshooting / FAQ
@@ -110,6 +116,13 @@ it lives now:
   observability, so it's the first thing to read or send when asking for help.
 - **What version am I on?** Open the window: the version is shown right under
   the title. It's also written to the log on every daily update check.
+- **A toast says "Ollama needs updating".** An app update pinned a different
+  Ollama version than the one installed on this PC. Open Realm Chat and
+  click **Fix problems** (one admin prompt, about a 1 GB download). Nothing
+  is broken meanwhile — the chat keeps running on the installed version —
+  and the toast comes back once a day until it's done. The log has an
+  `Ollama version mismatch: <installed> installed, <pinned> pinned` line for
+  every check.
 - **The bots went silent.** In order:
   1. Is Realm Chat still running? Look for its tray icon (closing the window
      while the chat runs only minimizes to the tray). If it's gone, start the

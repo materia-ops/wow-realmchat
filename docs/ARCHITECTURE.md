@@ -64,10 +64,11 @@ Design invariants:
   and keep-alive are constants (`Constants.cs`). Changing them is a code
   change that rolls out via self-update, so the fleet can't drift. The only
   hands-on step is a changed Ollama version: self-update moves the pin, not
-  the Ollama install, so the health card flags the installed version until
-  one **Fix problems** click (one UAC prompt) installs the pinned one. The
-  chat keeps starting on the installed version meanwhile (the full flow is
-  in the CI doc's Renovate section).
+  the Ollama install, so the health card flags the installed version — and
+  a daily toast says so on a PC where nobody opens the window (see "Pinned
+  Ollama mismatch notice" in §3) — until one **Fix problems** click (one UAC
+  prompt) installs the pinned one. The chat keeps starting on the installed
+  version meanwhile (the full flow is in the CI doc's Renovate section).
 - **Graceful consumer degradation.** The app never needs to be "highly
   available": the game server treats an unreachable model as "use canned
   chatter", so every failure mode here is a quality reduction, not an
@@ -88,6 +89,7 @@ the .NET Framework:
 | `AppConfig.cs` | `config.json` load/save; property names ARE the JSON schema (see §4) |
 | `OllamaController.cs` | owns the `ollama serve` child process and everything HTTP about it: health, model presence, warm-up, pull, rm. No WinForms dependency — this is the E2E-testable core |
 | `HealthCheck.cs` | the unprivileged checks (pinned version installed, machine env vars, firewall state, DNS name) + `ElevatedFix`, the single elevated self-invocation that repairs the admin-fixable ones (install/env/firewall — a DNS mismatch is a server-side record, not fixable from this PC) |
+| `OllamaPinNotice.cs` | the unattended "installed Ollama isn't the pinned one" notice: a read-only probe (`ollama -v`), the pure once-per-pin-per-day decision, and the toast text. Never elevates, downloads, installs or throws |
 | `SelfUpdater.cs` | the update engine: verified fetch (`Fetch()`), download, hash check, staged rename swap with rollback |
 | `ReleaseKey.cs` | the pinned RSA-3072 release public key and signature verification |
 | `ScheduledTask.cs` | registers the logon + daily `--silent` task via `schtasks /XML`; `StartMenu` shortcut |
@@ -154,6 +156,42 @@ a loud signature-skip for version `dev`, but the app never reaches it, and
 the test project deliberately builds as a non-`dev` version so the suite
 exercises the verifying path.
 
+### Pinned Ollama mismatch notice
+
+The health card only speaks when someone opens the window, so the version
+row has a second, unattended voice. `OllamaPinNotice` runs `ollama -v`
+(nothing else: no elevation, download, install or extra network call),
+compares the result to the pin with the same exact-match rule as the health
+row (`HealthCheck.IsPinnedVersion`), and:
+
+- **logs** `Ollama version mismatch: <installed> installed, <pinned> pinned`
+  on every check that finds one;
+- **toasts** installed vs pinned plus "open Realm Chat and click Fix
+  problems" — at most once per pinned version per local calendar day
+  (`ollama_notice_pin` / `ollama_notice_day` in `config.json`). A new pin
+  notifies again at once; the same pin again the next day, until fixed.
+
+Where it runs, and what each covers:
+
+| trigger | covers |
+|---|---|
+| every `--silent` run (logon + daily), after the update step — on the failure path too, since the check is local | the PC where the app is closed. After an update this is the `--silent --postupdate` run, so it compares against the NEW pin, and the notice is folded into the "Realm Chat updated" toast |
+| the GUI's open sequence, once it is past the self-update step | manual opens, the relaunch after a GUI-driven self-update, and the in-tray `--resume` launch |
+| the running GUI, 24 h after its previous check | the PC that keeps the chat open: the scheduled run exits early there (single instance), so the tray app repeats the daily reminder itself |
+
+A running instance never changes its own pin (it self-updates only on
+open), so the open-time check is where a pin bump is first noticed on a PC
+that keeps the chat up; the 24 h repeat is the reminder, and also catches
+the Ollama install changing underneath a running app.
+
+An unknown installed version — Ollama not installed, or `ollama -v` output
+with no version in it — is logged but never toasted: there is no truthful
+"installed vs pinned" to show, and the health card's "not installed" row
+covers it when the window is opened. The check is wrapped so that it can
+only ever cost a log line: a hung `ollama -v` is killed after 20 s (process
+tree and all, so nothing is left running or blocked behind it) and
+any exception is logged and swallowed, never failing the update run.
+
 ### Auto-resume (opt-in)
 
 `config.json` tracks `chat_was_running` (set on Ready, cleared on deliberate
@@ -178,7 +216,7 @@ install/env/firewall repairs and exits, the parent refreshes the health card.
 | `GET /api/tags` | is the pinned model downloaded; model list + sizes for Cleanup |
 | `GET /api/ps` | is the model loaded on the GPU |
 | `POST /api/generate` (`stream:false`) | warm-up |
-| `ollama -v` (CLI) | installed-version check against the pin |
+| `ollama -v` (CLI) | installed-version check against the pin (health row and the mismatch notice) |
 | `ollama serve` (CLI) | the owned server process |
 | `ollama pull <model>` (CLI) | model download with progress lines |
 | `ollama rm <model>` (CLI) | model removal (blob refcounting stays correct) |
@@ -210,7 +248,8 @@ Property names are the schema (snake_case on purpose). Site config:
 `server_subnets`, `dns_name`, `models_dir`, `theme`, `auto_resume`,
 `disable_firewall_watch`. Dev/test overrides: `releases_repo`, `base_url`,
 `ollama_exe`, `port`. App-managed state: `setup_done`, `tray_hint_shown`,
-`chat_was_running`, and the update bookkeeping (`consecutive_failures`,
-`last_*`). `old_models_dirs` remembers previous model stores so Cleanup can
+`chat_was_running`, the update bookkeeping (`consecutive_failures`,
+`last_*`), and the last Ollama-mismatch toast (`ollama_notice_pin`,
+`ollama_notice_day`). `old_models_dirs` remembers previous model stores so Cleanup can
 offer the space back. Unknown fields are ignored on load — add fields, never
 repurpose them.

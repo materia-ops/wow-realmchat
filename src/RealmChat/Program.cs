@@ -5,7 +5,8 @@
 //                 %LOCALAPPDATA%\RealmChat and registers a Scheduled Task
 //                 (login + daily) for silent self-updates; then the window.
 //   --silent      what the Scheduled Task runs: self-update quietly, toast on
-//                 change or persistent failure, exit. Never starts the chat
+//                 change, persistent failure or an installed Ollama that is
+//                 not the pinned one, exit. Never starts the chat
 //                 itself, but shortly after boot it may relaunch the GUI with
 //                 --resume when the opt-in auto-resume setting applies.
 //   --resume      internal: GUI start that goes straight to the tray and
@@ -159,6 +160,8 @@ namespace RealmChat
         private static int SilentRun(AppConfig cfg, bool postUpdate)
         {
             Logger.Log("--- silent update check (" + Version + ") ---");
+            string ollamaNote = null;
+            bool ollamaChecked = false;
             try
             {
                 // The scheduled task itself only updates the app; the chat
@@ -175,10 +178,19 @@ namespace RealmChat
                 cfg.last_success_utc = DateTime.UtcNow.ToString("o");
                 cfg.last_check_utc = cfg.last_success_utc;
                 cfg.last_result = postUpdate ? "updated to " + Version : "up to date (" + Version + ")";
+                // Nobody opens the window on an unattended host, so this run
+                // is where a pinned-Ollama mismatch gets said out loud. After
+                // the update on purpose (the post-update run compares against
+                // the NEW pin), and before Save so the notice state persists.
+                ollamaChecked = true;
+                ollamaNote = OllamaPinNotice.Check(cfg, Logger.Log);
                 cfg.Save();
                 if (postUpdate)
                     Toast.Show("Realm Chat updated",
-                        "Now running version " + Version + ".", false);
+                        "Now running version " + Version + "." +
+                        (ollamaNote == null ? "" : " " + ollamaNote), ollamaNote != null);
+                else
+                    QueueOllamaToast(ollamaNote);
                 return 0;
             }
             catch (Exception ex)
@@ -196,9 +208,26 @@ namespace RealmChat
                         "Update checks have failed " + n + " times in a row. " +
                         "Open 'Realm Chat' from the Start Menu for details.", true);
                 }
+                // The Ollama check is local, so a failed update check (no
+                // network) doesn't excuse it.
+                if (!ollamaChecked) ollamaNote = OllamaPinNotice.Check(cfg, Logger.Log);
+                QueueOllamaToast(ollamaNote);
                 cfg.Save();
                 return 1;
             }
+        }
+
+        // Shown after the single-instance lock is released (see Main), behind
+        // any toast already queued.
+        private static void QueueOllamaToast(string note)
+        {
+            if (note == null) return;
+            var first = pendingToast;
+            pendingToast = () =>
+            {
+                if (first != null) first();
+                Toast.Show(OllamaPinNotice.Title, note, true);
+            };
         }
 
         private static void MaybeResume(AppConfig cfg)

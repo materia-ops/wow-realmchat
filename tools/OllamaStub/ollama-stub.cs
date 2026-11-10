@@ -1,6 +1,7 @@
 // Test stand-in for ollama.exe (compile with the legacy C# 5 csc; no deps).
 // Speaks just enough of the Ollama CLI + HTTP API for RealmChat's E2E tests:
-//   ollama-stub -v            -> prints a version line
+//   ollama-stub -v            -> prints a version line (STUB_HANG=1: prints
+//                                nothing and never exits - a hung ollama)
 //   ollama-stub serve         -> HTTP on 127.0.0.1:<port from OLLAMA_HOST>
 //   ollama-stub pull <model>  -> creates the model marker + progress lines
 // State lives in the directory pointed at by OLLAMA_MODELS: a "model.present"
@@ -23,6 +24,8 @@ internal static class OllamaStub
 
         if (args.Length > 0 && args[0] == "-v")
         {
+            if (Environment.GetEnvironmentVariable("STUB_HANG") == "1")
+                Thread.Sleep(Timeout.Infinite);
             Console.WriteLine("ollama version is " + version);
             return 0;
         }
