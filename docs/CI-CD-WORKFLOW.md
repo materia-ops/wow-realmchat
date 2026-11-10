@@ -8,8 +8,10 @@ first for what the release assets mean.
 
 **Merging to main IS deploying.** Any push to main that touches `src/**`
 (or `VERSION`, or `release.yml`) publishes a release, and every installed
-client picks it up within 24 hours (daily task) or on next app open —
-unattended, with no human in the loop after the merge. There is no staging
+client picks it up at the next daily check or on next app open —
+unattended, with no human in the loop after the merge. The daily check is
+skipped while the app is running (single instance), so a host that keeps
+the chat open updates only when the app is next reopened. There is no staging
 environment; the PR gate is the staging environment.
 
 The corollary: `updaterVersion` is the git **tree hash of `src/RealmChat`**,
@@ -108,8 +110,8 @@ that does **not** finish by itself:
 
 1. Skim the [Ollama release notes](https://github.com/ollama/ollama/releases)
    for model / GPU regressions, then merge the PR by hand.
-2. `release.yml` publishes a new RealmChat; the host PC self-updates within
-   24 hours or on next app open. Only the app changed — the Ollama install
+2. `release.yml` publishes a new RealmChat; the host PC self-updates at
+   the next daily check, or on next app open if the app was running. Only the app changed — the Ollama install
    on the PC is still the previous version.
 3. The health check wants the *exact* pinned version, so the health card now
    shows the Ollama row as a warning ("version X installed"). Health runs

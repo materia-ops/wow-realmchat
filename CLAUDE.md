@@ -41,7 +41,8 @@ worst possible bug here.
   or `.github/workflows/release.yml` publishes a signed release —
   whatever the commit prefix; this repo is not on release-please — and
   a change under `src/RealmChat` is then installed by every fielded
-  client, unattended, within 24 hours.
+  client, unattended: at the next daily check, or on next app open if
+  the app was running (a running instance skips the scheduled check).
 - The release workflow resolves the next free `vX.Y.Z` tag from
   `VERSION` and bumps `VERSION` back itself via an auto-merged
   `release-bump/<tag>` PR. Never edit `VERSION` or create tags/releases

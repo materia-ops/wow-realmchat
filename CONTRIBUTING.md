@@ -4,8 +4,9 @@ Read [docs/CI-CD-WORKFLOW.md](docs/CI-CD-WORKFLOW.md) before your first
 merge. The one thing to internalize: **merging to main IS deploying.**
 Releases are automatic — any merge touching `src/**` (or `VERSION`, or
 `release.yml`) publishes a signed release that every installed client picks
-up unattended within 24 hours. There is no staging environment; the PR gate
-is the staging environment.
+up unattended — at the next daily check, or on next app open if the app was
+running. There is no staging environment; the PR gate is the staging
+environment.
 
 ## Rules
 
