@@ -38,7 +38,10 @@ everything on the machine healthy and up to date by itself.
 - **Self-updating**: a Scheduled Task checks daily and swaps in new versions
   silently (the update task never starts the chat — that stays a human
   decision, with one opt-in exception below). Pinned model/version changes
-  ship as app updates, so the host PC never needs hands-on maintenance.
+  ship as app updates. The one hands-on step: after an update that pins a
+  new Ollama version, the health list shows a version warning the next time
+  the window is opened, until someone clicks **Fix problems** once (admin
+  prompt, about a 1 GB download).
 - **Auto-resume (opt-in)**: a checkbox in setup makes the chat come back by
   itself shortly after a reboot — but only when it was running before the
   machine went down. Windows Update restarting the PC overnight no longer
@@ -91,7 +94,7 @@ it lives now:
 | expected address check | Settings ("DNS name" — validated by lookup, no hardcoded IP) |
 | auto-resume after reboot | Settings checkbox (default off; resumes only a chat that was running) |
 | model storage folder | Settings (Browse; defaults to `C:\ProgramData\Ollama\models`) |
-| pinned Ollama version / model / keep-alive | `src/RealmChat/Constants.cs` — deliberately maintainer-only: a merge rolls the change to the host PC via self-update |
+| pinned Ollama version / model / keep-alive | `src/RealmChat/Constants.cs` — deliberately maintainer-only: a merge rolls the change to the host PC via self-update (a new Ollama version then needs one **Fix problems** click there) |
 | port | `config.json` `port` override only — deliberately hidden: the game server expects the default, changing it unilaterally silences the bots |
 
 ## Troubleshooting / FAQ
@@ -124,7 +127,7 @@ it lives now:
 
 ## Development
 
-- Build: `dotnet build src/RealmChat -c Release` (any .NET 8+ SDK; the net48
+- Build: `dotnet build src/RealmChat -c Release -o out` (any .NET 8+ SDK; the net48
   reference assemblies restore via the project's `nuget.config`).
 - Tests: `dotnet build tools/Tests -c Release -o out-tests`, compile the stub
   (`csc /out:out\ollama-stub.exe tools\OllamaStub\ollama-stub.cs`), then run
@@ -134,7 +137,11 @@ it lives now:
   that dir; no Scheduled Task or Start Menu writes).
 - `config.json` overrides for testing: `base_url` (any static server hosting
   the release assets), `ollama_exe` (e.g. the stub in
-  `tools/OllamaStub`), `port`, `models_dir`.
+  `tools/OllamaStub`), `port`, `models_dir`. A plain local build has
+  version `dev` and skips self-update entirely, so `base_url` does nothing
+  there: to exercise the update path, build with
+  `-p:UpdaterVersion=<anything>` and serve assets signed by the real
+  release key (a copy of a published release).
 - `--silent` is what the Scheduled Task runs; `--configure` re-runs setup.
 - Deeper docs: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) (system/
   components/data flow/interfaces) and

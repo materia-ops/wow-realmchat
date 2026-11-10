@@ -13,8 +13,9 @@ Deliberately **not** covered, because the app deliberately doesn't have them:
 - **Caching** — nothing is cached by the app. The one residency concern,
   keeping the model on the GPU between bot messages, is delegated to Ollama
   via the pinned `OLLAMA_KEEP_ALIVE` value.
-- **Telemetry / remote logging** — a single attended desktop app; the log
-  file and tray toasts are the observability surface.
+- **Telemetry / remote logging** — a single desktop app on one host PC,
+  with no operator watching it; the log file and tray toasts are the
+  observability surface.
 
 ## 1. System architecture
 
@@ -61,8 +62,12 @@ Design invariants:
   run and live only in the machine-local config.
 - **Pinned everything.** Ollama version, model tag (quantization included),
   and keep-alive are constants (`Constants.cs`). Changing them is a code
-  change that rolls out via self-update — the host PC never needs hands-on
-  maintenance, and the fleet can't drift.
+  change that rolls out via self-update, so the fleet can't drift. The only
+  hands-on step is a changed Ollama version: self-update moves the pin, not
+  the Ollama install, so the health card flags the installed version until
+  one **Fix problems** click (one UAC prompt) installs the pinned one. The
+  chat keeps starting on the installed version meanwhile (the full flow is
+  in the CI doc's Renovate section).
 - **Graceful consumer degradation.** The app never needs to be "highly
   available": the game server treats an unreachable model as "use canned
   chatter", so every failure mode here is a quality reduction, not an
@@ -83,7 +88,7 @@ the .NET Framework:
 | `AppConfig.cs` | `config.json` load/save; property names ARE the JSON schema (see §4) |
 | `OllamaController.cs` | owns the `ollama serve` child process and everything HTTP about it: health, model presence, warm-up, pull, rm. No WinForms dependency — this is the E2E-testable core |
 | `HealthCheck.cs` | the unprivileged checks (pinned version installed, machine env vars, firewall state, DNS name) + `ElevatedFix`, the single elevated self-invocation that repairs the admin-fixable ones (install/env/firewall — a DNS mismatch is a server-side record, not fixable from this PC) |
-| `SelfUpdater.cs` | the update engine: verified fetch (`Fetch()`), download, hash check, rename-aside swap with rollback |
+| `SelfUpdater.cs` | the update engine: verified fetch (`Fetch()`), download, hash check, staged rename swap with rollback |
 | `ReleaseKey.cs` | the pinned RSA-3072 release public key and signature verification |
 | `ScheduledTask.cs` | registers the logon + daily `--silent` task via `schtasks /XML`; `StartMenu` shortcut |
 | `Cleanup.cs` | reclaimable-disk scan/delete: old model stores, unused models (via `ollama rm`) |
@@ -128,13 +133,26 @@ GET SHA256SUMS + SHA256SUMS.sig
 GET manifest.json ── hash must match its entry in the verified sums
 manifest.updaterVersion == my version?  ──yes──▶ done ("up to date")
 GET RealmChat.exe ── hash must match the verified sums
-rename installed exe aside ─▶ move new exe in ─▶ relaunch
-  └─ any failure: move the old exe back (rollback)
+copy the verified exe to RealmChat.exe.new beside the installed one
+  ─▶ rename installed → .old ─▶ rename .new → installed
+       └─ second rename fails: move .old back (rollback)
+  ─▶ relaunch with --postupdate (deletes .old / .new leftovers)
 ```
 
+When the running exe is a stray copy rather than the installed one
+(Desktop/Downloads), it replaces the installed exe directly and hands off
+to it instead.
+
 Nothing downstream of `Fetch()` ever sees unverified bytes. Dev builds
-(version `dev`) skip only the signature step, loudly, so local testing works
-without the private key.
+(version `dev`, i.e. any local build without `-p:UpdaterVersion=<x>`) skip
+self-update entirely: `SelfUpdater.Run()` returns before fetching anything.
+To exercise the update path locally, build with
+`-p:UpdaterVersion=<anything>` and point `base_url` at a server hosting
+assets signed by the real release key (a copy of a published release) —
+such a build verifies signatures like a released one. `Fetch()` does carry
+a loud signature-skip for version `dev`, but the app never reaches it, and
+the test project deliberately builds as a non-`dev` version so the suite
+exercises the verifying path.
 
 ### Auto-resume (opt-in)
 
@@ -160,6 +178,8 @@ install/env/firewall repairs and exits, the parent refreshes the health card.
 | `GET /api/tags` | is the pinned model downloaded; model list + sizes for Cleanup |
 | `GET /api/ps` | is the model loaded on the GPU |
 | `POST /api/generate` (`stream:false`) | warm-up |
+| `ollama -v` (CLI) | installed-version check against the pin |
+| `ollama serve` (CLI) | the owned server process |
 | `ollama pull <model>` (CLI) | model download with progress lines |
 | `ollama rm <model>` (CLI) | model removal (blob refcounting stays correct) |
 
