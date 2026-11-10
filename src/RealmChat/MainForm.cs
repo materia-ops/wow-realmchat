@@ -52,6 +52,8 @@ namespace RealmChat
         private bool fwCheckRunning;
         private bool reconcileRunning; // one probe in flight at a time
         private DateTime? fwPostStart; // schedules the just-after-start check
+        private DateTime? pinCheckedUtc; // last pinned-Ollama check (null until the open sequence ran)
+        private bool pinCheckRunning;
 
         public MainForm(AppConfig cfg, bool resume)
         {
@@ -222,6 +224,11 @@ namespace RealmChat
                     fwPostStart = null;
                     CheckFirewallAsync();
                 }
+                // Daily, because the scheduled check can't do it while this
+                // instance holds the single-instance lock.
+                if (!busy && pinCheckedUtc.HasValue &&
+                    (DateTime.UtcNow - pinCheckedUtc.Value).TotalHours >= 24)
+                    CheckOllamaPinAsync();
             };
             poll.Start();
 
@@ -351,6 +358,7 @@ namespace RealmChat
                         Close();
                         return;
                     }
+                    CheckOllamaPinAsync();
                     health = h;
                     cleanupItems = c;
                     PaintHealth();
@@ -444,6 +452,33 @@ namespace RealmChat
                     }));
                 }
                 catch { fwCheckRunning = false; }
+            });
+        }
+
+        // Pinned-Ollama mismatch notice (see OllamaPinNotice): on every open -
+        // which includes the relaunch after a self-update, when the pin may
+        // just have moved, and the in-tray --resume launch - and then once a
+        // day for as long as the app stays up.
+        private void CheckOllamaPinAsync()
+        {
+            if (pinCheckRunning) return;
+            pinCheckRunning = true;
+            pinCheckedUtc = DateTime.UtcNow;
+            Task.Run(delegate
+            {
+                string installed = OllamaPinNotice.Probe(ollama, Say);
+                try
+                {
+                    BeginInvoke((Action)(delegate
+                    {
+                        pinCheckRunning = false;
+                        string note = OllamaPinNotice.Evaluate(cfg, installed, DateTime.Now, Say);
+                        if (note == null) return;
+                        try { cfg.Save(); } catch { }
+                        Toast.ShowFromTray(tray, OllamaPinNotice.Title, note, true);
+                    }));
+                }
+                catch { pinCheckRunning = false; }
             });
         }
 

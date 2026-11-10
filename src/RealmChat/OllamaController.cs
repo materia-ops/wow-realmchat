@@ -78,8 +78,55 @@ namespace RealmChat
                     var errTask = p.StandardError.ReadToEndAsync();
                     string outp = p.StandardOutput.ReadToEnd() + errTask.GetAwaiter().GetResult();
                     p.WaitForExit(15000);
-                    var m = System.Text.RegularExpressions.Regex.Match(outp, @"(\d+\.\d+\.\d+)");
-                    return m.Success ? m.Groups[1].Value : null;
+                    return ParseVersion(outp);
+                }
+            }
+            catch { return null; }
+        }
+
+        // The one parse of `ollama -v` output, for both probes.
+        private static string ParseVersion(string outp)
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(outp, @"(\d+\.\d+\.\d+)");
+            return m.Success ? m.Groups[1].Value : null;
+        }
+
+        // Same answer as InstalledVersion(), for callers nobody is watching
+        // (the mismatch notice): a `ollama -v` that hangs is killed, tree and
+        // all, instead of leaving a child process and a blocked thread behind.
+        public string InstalledVersion(int timeoutMs, out bool timedOut)
+        {
+            timedOut = false;
+            var exe = ResolveExe();
+            if (exe == null) return null;
+            try
+            {
+                var psi = new ProcessStartInfo(exe, "-v")
+                {
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                using (var p = Process.Start(psi))
+                {
+                    var outTask = p.StandardOutput.ReadToEndAsync();
+                    var errTask = p.StandardError.ReadToEndAsync();
+                    var reads = new System.Threading.Tasks.Task[] { outTask, errTask };
+                    // The reads end when the pipes close, i.e. when the child
+                    // (and anything it spawned) is gone.
+                    if (!System.Threading.Tasks.Task.WaitAll(reads, timeoutMs))
+                    {
+                        timedOut = true;
+                        try { KillTree(p.Id); } catch { }
+                        try { if (!p.HasExited) p.Kill(); } catch { }
+                        // Let the reads see the closed pipes BEFORE the using
+                        // disposes the streams under them.
+                        try { System.Threading.Tasks.Task.WaitAll(reads, 5000); } catch { }
+                        return null;
+                    }
+                    p.WaitForExit(5000);
+                    return ParseVersion(outTask.Result + errTask.Result);
                 }
             }
             catch { return null; }

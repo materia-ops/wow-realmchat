@@ -27,11 +27,12 @@ namespace RealmChat
 
             // 1. Ollama installed at the pinned version
             string ver = ollama.InstalledVersion();
+            bool verOk = IsPinnedVersion(ver, Constants.OllamaVersion);
             items.Add(new HealthItem
             {
                 Name = "Ollama " + Constants.OllamaVersion,
-                Ok = ver == Constants.OllamaVersion,
-                Detail = ver == null ? "not installed" : ver == Constants.OllamaVersion ? "installed" : "version " + ver + " installed",
+                Ok = verOk,
+                Detail = ver == null ? "not installed" : verOk ? "installed" : "version " + ver + " installed",
                 NeedsAdmin = true,
                 FixFlag = "install",
             });
@@ -81,6 +82,14 @@ namespace RealmChat
             }
 
             return items;
+        }
+
+        // The one definition of "the installed Ollama is the pinned one"
+        // (exact match, never "at least"), shared by the health row above and
+        // the unattended mismatch notice (OllamaPinNotice).
+        internal static bool IsPinnedVersion(string installed, string pinned)
+        {
+            return installed == pinned;
         }
 
         private static string Get(string name)

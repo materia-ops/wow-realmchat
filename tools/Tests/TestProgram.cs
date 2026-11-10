@@ -2,7 +2,8 @@
 // internals are directly reachable). Three layers:
 //   unit      - pure logic: sums parsing/verification, the pinned release key
 //               (against fixtures signed by the real private key), subnet and
-//               config helpers, the Scheduled Task XML.
+//               config helpers, the Scheduled Task XML, the pinned-Ollama
+//               mismatch notice decision.
 //   updater   - SelfUpdater.Fetch() against a local HttpListener serving the
 //               fixtures, including the tampered-manifest refusal.
 //   e2e       - OllamaController against tools/OllamaStub (start, pull, warm,
@@ -45,6 +46,7 @@ namespace RealmChat.Tests
                 SubnetTests();
                 AppConfigTests();
                 AutoResumeTests();
+                OllamaPinNoticeTests();
                 ScheduledTaskXmlTests();
                 UpdaterFetchTests(fixtures);
                 StubE2ETests(stub);
@@ -189,6 +191,68 @@ namespace RealmChat.Tests
                   "chat that was stopped stays stopped");
         }
 
+        private static void OllamaPinNoticeTests()
+        {
+            Console.WriteLine("OllamaPinNotice:");
+            var noon = new DateTime(2026, 3, 10, 12, 0, 0);
+            string today = OllamaPinNotice.Day(noon);
+            Check(today == "2026-03-10", "day key is the local calendar date");
+
+            Check(!OllamaPinNotice.ShouldNotify("1.2.3", "1.2.3", null, null, noon),
+                  "installed == pinned never notifies");
+            Check(OllamaPinNotice.ShouldNotify("1.2.2", "1.2.3", null, null, noon),
+                  "first mismatch notifies");
+            Check(OllamaPinNotice.ShouldNotify("1.2.4", "1.2.3", null, null, noon),
+                  "a NEWER install is a mismatch too (exact pin)");
+            Check(!OllamaPinNotice.ShouldNotify("1.2.2", "1.2.3", "1.2.3", today, noon),
+                  "same pin already notified today stays quiet");
+            Check(!OllamaPinNotice.ShouldNotify("1.2.2", "1.2.3", "1.2.3", today, noon.AddHours(11)),
+                  "still quiet later the same day");
+            Check(OllamaPinNotice.ShouldNotify("1.2.2", "1.2.3", "1.2.3", today, noon.AddDays(1)),
+                  "same pin notifies again the next day");
+            Check(OllamaPinNotice.ShouldNotify("1.2.2", "1.2.4", "1.2.3", today, noon),
+                  "a NEW pin notifies even though the old one was notified today");
+            Check(!OllamaPinNotice.ShouldNotify(null, "1.2.3", null, null, noon),
+                  "unknown installed version (not installed / unreadable) never notifies");
+            Check(!HealthCheck.IsPinnedVersion(null, "1.2.3"), "no version is not the pinned version");
+
+            string msg = OllamaPinNotice.Message("1.2.2", "1.2.3");
+            Check(msg.Contains("1.2.2") && msg.Contains("1.2.3") && msg.Contains("Fix problems"),
+                  "message names installed, pinned and the fix");
+            // Balloon limits: 63 chars of title, 255 of text - including the
+            // "Now running version <12 hex>. " prefix of the post-update toast.
+            Check(OllamaPinNotice.Title.Length <= 63 &&
+                  ("Now running version 0123456789ab. " +
+                   OllamaPinNotice.Message("100.200.300", "100.200.301")).Length <= 255,
+                  "toast fits the balloon limits");
+
+            // Evaluate: logs EVERY mismatch, toasts once, records the state.
+            var cfg = new AppConfig();
+            var lines = new List<string>();
+            string stale = "0.0.1";     // never the pin
+            string note = OllamaPinNotice.Evaluate(cfg, stale, noon, lines.Add);
+            Check(note != null && note.Contains(stale) && note.Contains(Constants.OllamaVersion),
+                  "Evaluate returns the toast text on a first mismatch");
+            Check(cfg.ollama_notice_pin == Constants.OllamaVersion && cfg.ollama_notice_day == today,
+                  "Evaluate records pin + day");
+            Check(OllamaPinNotice.Evaluate(cfg, stale, noon.AddHours(1), lines.Add) == null,
+                  "Evaluate stays quiet the second time that day");
+            Check(lines.Count == 2 && lines[1].Contains("mismatch") && lines[1].Contains(stale),
+                  "the mismatch is logged on every check, toast or not");
+            Check(OllamaPinNotice.Evaluate(cfg, stale, noon.AddDays(1), lines.Add) != null &&
+                  cfg.ollama_notice_day == OllamaPinNotice.Day(noon.AddDays(1)),
+                  "Evaluate notifies again the next day");
+
+            var clean = new AppConfig();
+            lines.Clear();
+            Check(OllamaPinNotice.Evaluate(clean, Constants.OllamaVersion, noon, lines.Add) == null &&
+                  OllamaPinNotice.Evaluate(clean, null, noon, lines.Add) == null &&
+                  lines.Count == 0 && clean.ollama_notice_pin == null,
+                  "match / unknown: no toast, no log line, no state");
+            Check(OllamaPinNotice.Evaluate(null, stale, noon, delegate { throw new Exception("boom"); }) == null,
+                  "Evaluate swallows its own failures (null config, throwing logger)");
+        }
+
         private static void ScheduledTaskXmlTests()
         {
             Console.WriteLine("ScheduledTask.BuildXml:");
@@ -295,6 +359,18 @@ namespace RealmChat.Tests
 
         // --- e2e: OllamaController against the stub -----------------------------
 
+        private static bool StubProcessesGone()
+        {
+            for (int i = 0; i < 50; i++)
+            {
+                var alive = System.Diagnostics.Process.GetProcessesByName("ollama-stub");
+                foreach (var p in alive) p.Dispose();
+                if (alive.Length == 0) return true;
+                Thread.Sleep(100);
+            }
+            return false;
+        }
+
         private static void StubE2ETests(string stub)
         {
             Console.WriteLine("OllamaController vs stub (" + stub + "):");
@@ -321,6 +397,65 @@ namespace RealmChat.Tests
             {
                 Check(ollama.InstalledVersion() == Constants.OllamaVersion,
                       "InstalledVersion parses the stub's -v output");
+
+                // The mismatch notice end to end, as the silent run calls it.
+                try
+                {
+                    int before = log.Count;
+                    Check(OllamaPinNotice.Check(cfg, log.Add) == null && log.Count == before &&
+                          cfg.ollama_notice_pin == null,
+                          "pin notice: pinned version installed - silent");
+
+                    Environment.SetEnvironmentVariable("STUB_VERSION", "0.0.1");
+                    string note = OllamaPinNotice.Check(cfg, log.Add);
+                    Check(note != null && note.Contains("0.0.1") && note.Contains(Constants.OllamaVersion),
+                          "pin notice: other version installed - toast text names both");
+                    Check(cfg.ollama_notice_pin == Constants.OllamaVersion,
+                          "pin notice: state recorded for the caller to save");
+                    before = log.Count;
+                    Check(OllamaPinNotice.Check(cfg, log.Add) == null && log.Count == before + 1,
+                          "pin notice: second check the same day only logs");
+
+                    Environment.SetEnvironmentVariable("STUB_VERSION", "unknown build");
+                    var fresh = new AppConfig { ollama_exe = cfg.ollama_exe };
+                    before = log.Count;
+                    Check(OllamaPinNotice.Check(fresh, log.Add) == null && fresh.ollama_notice_pin == null &&
+                          log.Count == before + 1 && log[before].Contains("couldn't read"),
+                          "pin notice: unparseable -v output - logged, no toast, no state");
+                }
+                finally
+                {
+                    Environment.SetEnvironmentVariable("STUB_VERSION", Constants.OllamaVersion);
+                }
+
+                // A hung `ollama -v` (no server is running yet, so every stub
+                // process alive here is a probe child).
+                try
+                {
+                    bool timedOut;
+                    Check(ollama.InstalledVersion(20000, out timedOut) == Constants.OllamaVersion && !timedOut,
+                          "timeout probe: same answer as InstalledVersion when the child exits");
+
+                    Environment.SetEnvironmentVariable("STUB_HANG", "1");
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    Check(ollama.InstalledVersion(1500, out timedOut) == null && timedOut,
+                          "timeout probe: a hung child reports a timeout, not a version");
+                    Check(clock.ElapsedMilliseconds < 15000, "timeout probe: returns near the timeout");
+                    Check(StubProcessesGone(), "timeout probe: the hung child was killed");
+
+                    var hung = new AppConfig { ollama_exe = cfg.ollama_exe };
+                    int before = log.Count;
+                    Check(OllamaPinNotice.Evaluate(hung, OllamaPinNotice.Probe(ollama, log.Add, 1500),
+                                                   DateTime.Now, log.Add) == null &&
+                          hung.ollama_notice_pin == null &&
+                          log.Count == before + 1 && log[before].Contains("did not answer"),
+                          "pin notice: hung -v - logged, no toast, no state");
+                    Check(StubProcessesGone(), "pin notice: no child process left behind");
+                }
+                finally
+                {
+                    Environment.SetEnvironmentVariable("STUB_HANG", null);
+                }
 
                 ollama.Start();
                 Check(ollama.WaitUntilUp(20), "server answers /api/version after Start");

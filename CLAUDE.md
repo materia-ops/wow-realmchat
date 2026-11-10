@@ -50,7 +50,11 @@ worst possible bug here.
   bump.
 - Renovate's pinned-Ollama PRs edit `src/RealmChat/Constants.cs`, so
   merging one is a fleet release too, and the host PC then needs one
-  **Fix problems** click. Details: `docs/CI-CD-WORKFLOW.md`.
+  **Fix problems** click. The app asks for it itself: a toast (installed
+  vs pinned) from the daily silent check and from the running tray app,
+  at most once per pin per day, plus a log line on every check
+  (`OllamaPinNotice.cs`). That check is read-only and must never fail or
+  block the update run. Details: `docs/CI-CD-WORKFLOW.md`.
 
 ## Work docs
 

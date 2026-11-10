@@ -114,17 +114,26 @@ that does **not** finish by itself:
    the next daily check, or on next app open if the app was running. Only the app changed — the Ollama install
    on the PC is still the previous version.
 3. The health check wants the *exact* pinned version, so the health card now
-   shows the Ollama row as a warning ("version X installed"). Health runs
-   when the window opens, not in the daily silent task, so nothing toasts:
-   the warning is seen the next time someone opens Realm Chat.
+   shows the Ollama row as a warning ("version X installed"). The health
+   card itself only runs when the window opens, so the app also **toasts**
+   the mismatch — "Ollama X is installed, but Y is pinned … open Realm Chat
+   and click Fix problems" — without anyone opening it: in the post-update
+   run right after the self-update (folded into the "Realm Chat updated"
+   toast), then from every daily silent check, and from the tray app itself
+   on a PC that keeps the chat running. At most one toast per pinned version
+   per day; every check logs `Ollama version mismatch: …` to
+   `realmchat.log` regardless. (Mechanics: ARCHITECTURE.md §3, "Pinned
+   Ollama mismatch notice".)
 4. One **Fix problems** click downloads the pinned Ollama installer (about
    1 GB) and, after a single admin prompt, installs it silently. That click
-   needs a person at the PC.
+   still needs a person at the PC — the toast asks for it, nothing installs
+   by itself.
 
 Until step 4 the chat still starts and runs on the previously installed
 Ollama, so a pending bump is a warning, not an outage — and several bumps
 can pile up behind one click, since **Fix problems** always installs the
-currently pinned version.
+currently pinned version. A newer pin restarts the reminder immediately
+rather than waiting for the next day.
 
 ## The signing key (and the other release authorities)
 
