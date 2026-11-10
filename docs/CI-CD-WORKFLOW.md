@@ -8,8 +8,10 @@ first for what the release assets mean.
 
 **Merging to main IS deploying.** Any push to main that touches `src/**`
 (or `VERSION`, or `release.yml`) publishes a release, and every installed
-client picks it up within 24 hours (daily task) or on next app open —
-unattended, with no human in the loop after the merge. There is no staging
+client picks it up at the next daily check or on next app open —
+unattended, with no human in the loop after the merge. The daily check is
+skipped while the app is running (single instance), so a host that keeps
+the chat open updates only when the app is next reopened. There is no staging
 environment; the PR gate is the staging environment.
 
 The corollary: `updaterVersion` is the git **tree hash of `src/RealmChat`**,
@@ -41,9 +43,12 @@ don't even run the release workflow).
      trust fails the release here, loudly, instead of stranding the fleet;
    - publishes the release (exe, sums, sig, manifest);
    - bumps `VERSION` back via a **PR, not a direct commit** (the org ruleset
-     blocks direct pushes to main): a `bump` job opens `release-bump/<tag>`
-     with a github-bot GitHub App token and auto-merges it (squash, subject
-     `Release <tag> [skip ci]` so the merge doesn't re-trigger a release).
+     blocks direct pushes to main): a separate `bump` job (on
+     `ubuntu-latest`, after the Windows `release` job has published) opens
+     `release-bump/<tag>` with a `materia-minion` GitHub App token — the
+     App this doc otherwise calls "github-bot", see the table below — and
+     auto-merges it (squash, subject `Release <tag> [skip ci]` so the merge
+     doesn't re-trigger a release).
 4. Done. Do not create releases or tags by hand; the workflow owns them.
 
 ### Running the tests locally
@@ -83,6 +88,44 @@ match the paths above, run from the repo root).
   a change to it publishes a release even with no code change. Expected, but
   know it's coming. Keep third-party actions pinned by commit SHA.
 
+## Renovate and the pinned Ollama version
+
+Dependency PRs come from Renovate, configured in `.renovaterc.json5`. It
+runs on home-ops' self-hosted Renovate workflow, not in this repo: this
+repo has to be in that workflow's `RENOVATE_AUTODISCOVER_FILTER` and
+app-token repository list, with the `materia-minion` App installed here.
+
+**Commit types don't drive versioning here.** Unlike the release-please
+repos in the fleet, a release is cut by *which paths* a merge touches (top
+of this doc), never by `fix` vs `chore`. The types Renovate uses only keep
+the history conventional:
+
+| update | PR title | what merging it does |
+|---|---|---|
+| pinned Ollama (`OllamaVersion` in `src/RealmChat/Constants.cs`, tracked by a regex manager against `ollama/ollama` GitHub releases) | `fix(deps): update pinned ollama to vX.Y.Z` | **cuts a release and rolls the fleet** — never automerged |
+| NuGet / GitHub Actions | `chore(deps): …` | build/CI-only by intent, but the path rule still applies: a bump to `release.yml` or to `src/RealmChat/RealmChat.csproj` publishes a release (and the csproj one changes `updaterVersion`, so clients update); `ci.yml` and `tools/Tests` bumps don't |
+
+The Ollama pin is the repo's most frequent change, and it is the one update
+that does **not** finish by itself:
+
+1. Skim the [Ollama release notes](https://github.com/ollama/ollama/releases)
+   for model / GPU regressions, then merge the PR by hand.
+2. `release.yml` publishes a new RealmChat; the host PC self-updates at
+   the next daily check, or on next app open if the app was running. Only the app changed — the Ollama install
+   on the PC is still the previous version.
+3. The health check wants the *exact* pinned version, so the health card now
+   shows the Ollama row as a warning ("version X installed"). Health runs
+   when the window opens, not in the daily silent task, so nothing toasts:
+   the warning is seen the next time someone opens Realm Chat.
+4. One **Fix problems** click downloads the pinned Ollama installer (about
+   1 GB) and, after a single admin prompt, installs it silently. That click
+   needs a person at the PC.
+
+Until step 4 the chat still starts and runs on the previously installed
+Ollama, so a pending bump is a warning, not an outage — and several bumps
+can pile up behind one click, since **Fix problems** always installs the
+currently pinned version.
+
 ## The signing key (and the other release authorities)
 
 | where | what |
@@ -91,7 +134,7 @@ match the paths above, run from the repo root).
 | `ci-main` Environment secret `OP_RELEASE_TOKEN` | 1Password service-account token that authorizes that load — the only signing-related credential GitHub holds |
 | `ci-main` Environment secret `OP_CI_SERVICE_ACCOUNT_TOKEN` | 1Password service-account token the `bump` job uses to load the github-bot App credentials |
 | `ci-main` GitHub Environment | deployable from `main` only; the `release` and `bump` jobs declare it, so no PR or branch run can read either 1Password token |
-| github-bot GitHub App | mints the short-lived token that opens and auto-merges the `release-bump/<tag>` VERSION PR (the org disables PRs from `GITHUB_TOKEN` and the ruleset blocks direct pushes) |
+| `materia-minion` GitHub App, a.k.a. "github-bot" | one App, two names: `materia-minion` is the App itself (what org settings and PR authorship show, and the "minion app token" in `release.yml`'s comment); `github-bot` is the 1Password item holding its credentials (`op://ci/github-bot/…`), which is where the secret names and this doc's "github-bot" come from. It mints the short-lived token that opens and auto-merges the `release-bump/<tag>` VERSION PR (the org disables PRs from `GITHUB_TOKEN` and the ruleset blocks direct pushes) |
 | `src/RealmChat/release-key.pub` | committed public key; CI's pre-publish self-verify |
 | `src/RealmChat/ReleaseKey.cs` | the same key's modulus, pinned in the exe; clients verify with it (RSA PKCS#1 v1.5, SHA-256) |
 
@@ -118,8 +161,9 @@ self-update is itself gated by the old key. Therefore:
    openssl dgst -sha256 -sign new-key.pem \
      -out tools/Tests/fixtures/SHA256SUMS.sig tools/Tests/fixtures/SHA256SUMS
    ```
-3. Wait for the fleet to update (check the app footer / log on the host
-   PC(s), or just give it >24 h).
+3. Wait for the fleet to update (check the version under the window title,
+   or the `--- silent update check (<version>) ---` lines in
+   `realmchat.log`, on the host PC(s) — or just give it >24 h).
 4. Only now put the new private key in the 1Password item CI signs from.
    The next release is signed by it; the (updated) fleet accepts it.
    Refresh the key fingerprint in the materia-ops/.github profile README in

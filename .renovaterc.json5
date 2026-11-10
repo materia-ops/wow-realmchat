@@ -2,7 +2,8 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   // Runs on home-ops' self-hosted Renovate workflow (this repo must be listed
   // in its RENOVATE_AUTODISCOVER_FILTER + app-token repositories, and the
-  // github-bot App installed here).
+  // materia-minion App - credentials in the 1Password item ci/github-bot -
+  // installed here).
   extends: [
     "config:recommended",
     ":semanticCommits",
