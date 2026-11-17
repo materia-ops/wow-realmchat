@@ -29,6 +29,12 @@ don't even run the release workflow).
    - compiles `tools/OllamaStub` with the legacy Framework `csc`;
    - builds and **runs `tools/Tests`** (unit + signature fixtures + the
      full controller E2E against the stub). A red suite blocks the merge.
+
+   `secret-scan.yaml` runs as well, on every PR and every push to `main`:
+   the org's shared, report-only secret scan (gitleaks) over the tree and
+   the full history. A finding fails the check and names file, line and
+   rule, never the value; an exception, with its reason, goes in
+   `.github/secret-scan-exceptions.toml`.
 3. Merge. `release.yml` then, in order:
    - resolves the next tag from `VERSION` (auto-increments patch past any
      existing tag/release — two same-day merges can't collide);
