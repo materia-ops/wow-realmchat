@@ -29,6 +29,7 @@ don't even run the release workflow).
    - compiles `tools/OllamaStub` with the legacy Framework `csc`;
    - builds and **runs `tools/Tests`** (unit + signature fixtures + the
      full controller E2E against the stub). A red suite blocks the merge.
+
    `secret-scan.yaml` runs as well, on every PR and every push to `main`:
    the org's shared, report-only secret scan (gitleaks) over the tree and
    the full history. A finding fails the check and names file, line and
